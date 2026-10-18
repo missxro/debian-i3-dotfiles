@@ -26,6 +26,43 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(photo.read_bytes(), (ROOT / 'config/fastfetch/roxy-mushoku-tensei-2.png').read_bytes())
             self.assertNotIn('Include Fastfetch', result.stdout)
 
+    def test_default_installs_real_fonts_and_restore_removes_them(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            fonts = home / '.local/share/fonts/departure-mono'
+            for name in ('DepartureMonoNerdFontMono-Regular.otf', 'DepartureMonoNerdFont-Regular.otf'):
+                self.assertTrue((fonts / name).is_file(), 'Default installer must install ' + name)
+                self.assertEqual((fonts / name).read_bytes()[:4], b'OTTO')
+            self.assertTrue((fonts / 'LICENSE').is_file())
+            backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+            result = self.run_installer(home, '--yes', '--restore', str(backup))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((fonts / 'DepartureMonoNerdFontMono-Regular.otf').exists())
+
+    def test_default_font_plan_preserves_installed_and_custom_fonts(self):
+        spec = importlib.util.spec_from_file_location('installer_fonts', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        installed = subprocess.CompletedProcess([], 0, 'DepartureMono Nerd Font\nDepartureMono Nerd Font Mono\n')
+        with mock.patch.object(installer.subprocess, 'run', return_value=installed) as run, \
+             mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/fc-list'):
+            self.assertEqual(installer.font_plan(['core']), [])
+            run.assert_called_once()
+            run.reset_mock()
+            self.assertEqual(installer.font_plan(['core'], 'My Custom Font'), [])
+            self.assertEqual(installer.font_plan(['qt']), [])
+            self.assertEqual(len(installer.font_plan(['core'], detect=False)), 3)
+            run.assert_not_called()
+            with tempfile.TemporaryDirectory() as folder, \
+                 mock.patch.object(installer, 'font_directory', return_value=Path(folder)):
+                for name in installer.FONT_FILES.values():
+                    (Path(folder) / name).write_bytes(b'existing user font')
+                with mock.patch.object(installer.subprocess, 'run', side_effect=OSError('fontconfig unavailable')):
+                    self.assertEqual(installer.font_plan(['core']), [])
+                    self.assertEqual(installer.font_plan(['core'], detect=False), [])
+
     def test_missing_i3_installed_after_approval(self):
         spec = importlib.util.spec_from_file_location('installer_packages', ROOT / 'install.py')
         installer = importlib.util.module_from_spec(spec)

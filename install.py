@@ -47,6 +47,48 @@ def plan(modules):
     return files
 
 
+FONT_FILES = {
+    'DepartureMono Nerd Font': 'DepartureMonoNerdFont-Regular.otf',
+    'DepartureMono Nerd Font Mono': 'DepartureMonoNerdFontMono-Regular.otf',
+}
+
+
+def font_directory():
+    return Path.home() / '.local/share/fonts/departure-mono'
+
+
+def font_plan(modules, custom_font=None, detect=True):
+    if 'core' not in modules or custom_font:
+        return []
+    families = set()
+    if detect and shutil.which('fc-list'):
+        try:
+            result = subprocess.run(['fc-list', '--format=%{family}\\n'], capture_output=True,
+                                    text=True, check=True, timeout=15)
+            families = {name.strip() for line in result.stdout.splitlines() for name in line.split(',')}
+        except (OSError, subprocess.SubprocessError):
+            pass  # Unknown font state: safely install the bundled fonts per-user.
+    source = ROOT / 'assets/fonts/departure-mono'
+    files = [(source / name, font_directory() / name)
+             for family, name in FONT_FILES.items()
+             if family not in families and not os.path.lexists(font_directory() / name)]
+    if files and not os.path.lexists(font_directory() / 'LICENSE'):
+        files.append((source / 'LICENSE', font_directory() / 'LICENSE'))
+    return files
+
+
+def refresh_font_cache():
+    directory = font_directory()
+    if not directory.is_dir():
+        return
+    try:
+        safe_target(directory / 'probe')
+        subprocess.run(['fc-cache', '-f', str(directory)], check=True,
+                       capture_output=True, timeout=60)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        print('Warning: font files are saved, but font cache refresh failed. Run fc-cache -f after installing fontconfig.')
+
+
 def safe_target(path):
     """Never follow a symlink out of the user's managed destination tree."""
     home = Path.home().absolute()
@@ -175,7 +217,8 @@ def restore(backup, dry_run):
         target = Path(entry['target'])
         cursor_root = Path.home() / '.icons/Kitty'
         cursor_target = (target.is_relative_to(cursor_root) and target != cursor_root)
-        if str(target) not in allowed and not cursor_target and target != Path.home() / '.icons/default/index.theme':
+        font_target = target in {font_directory() / name for name in (*FONT_FILES.values(), 'LICENSE')}
+        if str(target) not in allowed and not cursor_target and not font_target and target != Path.home() / '.icons/default/index.theme':
             raise ValueError('Backup destination is not managed by this installer: ' + str(target))
         safe_target(target)
         original = entry['original']
@@ -292,7 +335,7 @@ def diagnostics(modules):
             result = subprocess.run(['/usr/bin/python3', '-c', '__import__(' + repr(module) + ')'],
                                     capture_output=True, text=True)
             print(f"  {'OK     ' if result.returncode == 0 else 'MISSING'} python3-{module}")
-        print('  DepartureMono Nerd Font Mono, Graphite-Dark and Kitty cursor assets are not bundled.')
+        print('  DepartureMono fonts are bundled and installed per-user if missing. Graphite-Dark is external; Kitty cursor is optional.')
         print('  No remote installer or unpinned third-party download is executed.')
     if 'qt' in modules:
         print('  Qt: set QT_QPA_PLATFORMTHEME=qt5ct in your session environment if needed (not overwritten).')
@@ -405,6 +448,7 @@ def main():
             with (state / 'lock').open('a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 restore(args.restore, False)
+                refresh_font_cache()
         return 0
     modules = list(dict.fromkeys(args.modules.split(',')))
     if any(module not in MODULES for module in modules):
@@ -419,7 +463,10 @@ def main():
                 modules.append(module)
     if args.wallpaper and 'core' not in modules:
         parser.error('--wallpaper requires core.')
-    files = plan(modules)
+    # Do not invoke Fontconfig until approval: even fc-list can create caches.
+    files = plan(modules) + font_plan(modules, args.font, detect=False)
+    if 'core' in modules and not args.font:
+        print('Fonts: possible placements listed below; after approval, installed families and existing destination files are preserved.')
     for source, target in files:
         safe_target(target)
         print(f'  {source.relative_to(ROOT)} -> {target}')
@@ -439,8 +486,6 @@ def main():
         setup_packages(modules, enabled=not args.yes)
         diagnostics(modules)
         if 'core' in modules and not args.yes:
-            if not args.font and ask('Use DejaVu Sans Mono instead of the external Nerd Font? Icons may be missing.'):
-                args.font = 'DejaVu Sans Mono'
             if not args.shell and not shutil.which('zsh'):
                 if ask('zsh is missing. Use bash in Kitty?', default=True):
                     args.shell = 'bash'
@@ -448,6 +493,7 @@ def main():
                     raise ValueError('Install zsh or choose --shell bash before installing core.')
             if not args.wallpaper and ask('Configure a local video wallpaper? Requires mpv and xwinwrap.'):
                 args.wallpaper = Path(input('Video path (no download): ').strip())
+    files = [pair for pair in files if pair[1].parent != font_directory()] + font_plan(modules, args.font)
     with tempfile.TemporaryDirectory(prefix='dotfiles-') as folder:
         files = prepare(files, args, Path(folder))
         for source, target in files:
@@ -456,6 +502,8 @@ def main():
         with (state / 'lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             install(files, state)
+            if any(target.parent == font_directory() for _, target in files):
+                refresh_font_cache()
     return 0
 
 

@@ -35,7 +35,7 @@ My Debian 13 rice — i3wm, Polybar, Kitty, Picom & animated wallpapers.
 config/     i3 / Polybar / Kitty / Picom / optional appearance
 bin/        Wallpaper launchers + shared supervisor helper
 packages/   Core and optional Debian package lists
-assets/     Desktop preview
+assets/     Desktop preview + licensed DepartureMono fonts
 docs/       Manual setup + portability notes
 tests/      Repository, launcher and MPRIS checks
 ```
@@ -44,7 +44,7 @@ tests/      Repository, launcher and MPRIS checks
 
 1. **Requirements:** existing Debian 13 i3/X11 session and an audio server.
 2. **Packages:** [core](packages/debian.txt) / [optional](packages/optional-debian.txt).
-3. **Extra components:** DepartureMono Nerd Font; xwinwrap and a local video for animated wallpaper.
+3. **Fonts:** DepartureMono Regular/Mono are bundled and installed per-user if missing. **Extra components:** xwinwrap and a local video for animated wallpaper.
 4. Preview with `./install.sh --dry-run`, then run `./install.sh` for the interactive installer.
 
 The installer asks before copying files or installing packages, backs up originals and supports restore. See [setup & recovery](docs/setup.md) for component selection and options.

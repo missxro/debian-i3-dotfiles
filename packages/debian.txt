@@ -20,4 +20,4 @@ fontconfig
 fonts-dejavu-core
 fonts-font-awesome
 fonts-noto-color-emoji
-# DepartureMono Nerd Font and xwinwrap are separate manual prerequisites.
+# DepartureMono fonts are bundled and installed per-user; xwinwrap remains manual.

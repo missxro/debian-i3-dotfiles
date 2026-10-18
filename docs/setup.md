@@ -35,11 +35,11 @@ Original files and a manifest are saved under `${XDG_STATE_HOME:-$HOME/.local/st
 
 Backups must remain inside that private state directory, owned by your user, with no symlinked or group/world-writable parents. Restore reinstates originals with their permissions and removes files created by that installation. It refuses later local edits and damaged backups: save/move edits deliberately before retrying. Backups, empty directories and installed packages are retained. File replacement is atomic; failed/interrupted placement or restore attempts rollback. Rollback also needs a writable filesystem; power loss, hard kill or persistent disk errors may require manual recovery from the retained backups. Restore multiple backups newest first, using the matching installer version.
 
-The wizard offers the packaged DejaVu font as an alternative to the external Nerd Font (some glyphs may be absent), bash for Kitty when zsh is missing, and a local video path. It never runs `chsh`, reloads your desktop, rewrites login settings, replaces your audio stack or configures a display manager. Start an i3 X11 session yourself when ready.
+The installer detects the exact DepartureMono Nerd Font families after approval and installs missing Regular/Mono OTFs from the bundled Nerd Fonts v3.5.1 assets into `~/.local/share/fonts/departure-mono/`, with the OFL license, backups and restore support. It runs `fc-cache` afterward; there is no DejaVu substitution question and no extra font download. `--font` still selects an already installed custom family and skips bundled fonts. Dry-run lists potential font placements without querying Fontconfig (which can write caches). The wizard offers bash for Kitty when zsh is missing, and a local video path. It never runs `chsh`, reloads your desktop, rewrites login settings, replaces your audio stack or configures a display manager. Start an i3 X11 session yourself when ready.
 
 **Optional cursor download:** the initial question offers Kitty Cursor (Noiire; Linux port by pxryzl, product 2275753). `--cursor` opts in explicitly; `--no-cursor` skips it. The archive is downloaded over HTTPS and verified against a pinned SHA-256 before unpacking. It is installed per-user under `~/.icons/Kitty`; GTK cursor settings and `~/.icons/default/index.theme` select it on the next session, with backup/restore. Declining preserves the existing cursor, even when GTK appearance is selected. No remote code is executed. `--dry-run --cursor` never downloads.
 
-**Other external assets are not downloaded:** DepartureMono Nerd Font Mono, Graphite-Dark, xwinwrap and video files must already exist for the exact original appearance. Decline GTK if Graphite-Dark is missing. Powerlevel10k and personal Zsh configuration are not included. Qt may need `QT_QPA_PLATFORMTHEME=qt5ct` in your session. Missing dependencies are reported; declining apt does not satisfy them. The Firefox and Flameshot shortcuts require those optional apps separately.
+**Other external assets are not downloaded:** Graphite-Dark, xwinwrap and video files must already exist for the exact original appearance. Decline GTK if Graphite-Dark is missing. Powerlevel10k and personal Zsh configuration are not included. Qt may need `QT_QPA_PLATFORMTHEME=qt5ct` in your session. Missing dependencies are reported; declining apt does not satisfy them. The Firefox and Flameshot shortcuts require those optional apps separately.
 
 ## Manual setup
 
@@ -52,7 +52,7 @@ Debian package names are listed in `packages/debian.txt`. Inspect the list befor
 
 Additional components not bundled here:
 
-- **DepartureMono Nerd Font**, including the Mono variant. Alternatively change font names in i3, Polybar, and Kitty.
+DepartureMono Nerd Font Regular and Mono are bundled under `assets/fonts/departure-mono/`. For manual setup, copy the OTFs and LICENSE into `~/.local/share/fonts/departure-mono/` and run `fc-cache -f`. Alternatively change font names in i3, Polybar, and Kitty.
 - **xwinwrap**, only for animated wallpapers. No automatic download or build is provided yet.
 - A local video of your choice. With no configured video, wallpaper startup is a no-op.
 - An existing PulseAudio-compatible server, such as PipeWire with its PulseAudio interface. The repo does not replace your audio stack.
