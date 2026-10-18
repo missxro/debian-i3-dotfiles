@@ -1,7 +1,10 @@
 {
     "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
     "logo": {
-        "type": "small",
+        "source": "~/.config/fastfetch/roxy-mushoku-tensei-2.png",
+        "type": "kitty-direct",
+        "height": 12,
+        "width": 20,
         "padding": {
             "top": 0,
             "left": 3

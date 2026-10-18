@@ -52,6 +52,10 @@ The previews need X11 and `xrandr` to discover active monitors. Normal launch al
 
 Launchers use the existing display layout; they do not change modes, refresh rates, positions, or the primary display. Hotplug requires restarting the relevant supervisor; live reconfiguration is not included yet.
 
+### Fastfetch (optional)
+
+Back up `~/.config/fastfetch/`, then copy the entire `config/fastfetch/` directory there, including `roxy-mushoku-tensei-2.png`. Run `fastfetch` inside Kitty to display the bundled artwork using `kitty-direct`. The image path uses the current user's home, not the source machine's path. If you use a custom config directory, update `logo.source` accordingly.
+
 ### Shortcuts
 
 `Mod` is the Super/Windows key.
@@ -70,4 +74,4 @@ Launchers use the existing display layout; they do not change modes, refresh rat
 Polybar playback: left click previous, right click next, middle click play/pause.
 
 
-[Back to README](../README.md) · [Portability notes](portability.md)
+[Back to README](../README.md) / [Portability notes](portability.md)
