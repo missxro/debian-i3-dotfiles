@@ -43,6 +43,16 @@ class Launchers(unittest.TestCase):
         return subprocess.run([str(script), *map(str, args)], env=env or self.env,
                               text=True, capture_output=True, timeout=5)
 
+    def test_wallpaper_finds_user_xwinwrap_without_login_path(self):
+        binary = self.base / '.local/bin/xwinwrap'
+        binary.parent.mkdir(parents=True)
+        binary.write_text('#!/bin/sh\nexit 0\n')
+        binary.chmod(0o755)
+        result = self.run_script(WALL, '--dry-run', self.video,
+                                 env=dict(self.env, HOME=str(self.base)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(item['argv'][0] == str(binary) for item in json.loads(result.stdout)))
+
     def test_polybar_plans_each_monitor_and_single_and_empty(self):
         for output, names in [(self.env['MONITORS'], ['DP-1', 'HDMI-1']),
                               ('Monitors: 1\n 0: +DP-2 900/200x600/100+0+0 DP-2\n', ['DP-2']),

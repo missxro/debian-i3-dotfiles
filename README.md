@@ -44,7 +44,7 @@ tests/      Repository, launcher and MPRIS checks
 
 1. **Requirements:** existing Debian 13 i3/X11 session and an audio server.
 2. **Packages:** [core](packages/debian.txt) / [optional](packages/optional-debian.txt).
-3. **Fonts:** DepartureMono Regular/Mono are bundled and installed per-user if missing. **Extra components:** xwinwrap for animated wallpaper (the video is bundled).
+3. **Fonts:** DepartureMono Regular/Mono are bundled and installed per-user if missing. **Animated wallpaper:** video bundled; missing xwinwrap is compiled per-user after package approval.
 4. Preview with `./install.sh --dry-run`, then run `./install.sh` for the interactive installer.
 
 The installer asks before copying files or installing packages, backs up originals and supports restore. See [setup & recovery](docs/setup.md) for component selection and options.

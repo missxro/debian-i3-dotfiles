@@ -53,8 +53,8 @@ Debian package names are listed in `packages/debian.txt`. Inspect the list befor
 Additional components not bundled here:
 
 DepartureMono Nerd Font Regular and Mono are bundled under `assets/fonts/departure-mono/`. For manual setup, copy the OTFs and LICENSE into `~/.local/share/fonts/departure-mono/` and run `fc-cache -f`. Alternatively change font names in i3, Polybar, and Kitty.
-- **xwinwrap**, only for animated wallpapers. No automatic download or build is provided yet.
-- The bundled Lain video is copied and configured automatically without a prompt. `--wallpaper` overrides it. Missing mpv/xwinwrap are reported; install them before playback.
+- **xwinwrap**, only for animated wallpapers. If missing, the installer adds build-essential and X11 development libraries to the approved apt step, compiles bundled checksum-pinned source without sudo, and installs it in `~/.local/bin/` with backup/restore. Existing xwinwrap is preserved. Declining the package step, `--yes` and `--files-only` skip the build; configuration files are still installed and missing playback dependencies are reported.
+- The bundled Lain video is copied and configured automatically without a prompt. `--wallpaper` overrides it. mpv is included in the package step; missing xwinwrap is built automatically after approval.
 - An existing PulseAudio-compatible server, such as PipeWire with its PulseAudio interface. The repo does not replace your audio stack.
 
 Optional GTK appearance assumes Graphite-Dark is already installed. Cursor selection is independent. Qt5ct requires `QT_QPA_PLATFORMTHEME=qt5ct` in your own session environment. None of these optional settings is required for the core desktop.

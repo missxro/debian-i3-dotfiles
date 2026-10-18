@@ -208,6 +208,7 @@ def restore(backup, dry_run):
         raise ValueError('Backup manifest must belong to you.')
     allowed = {str(target) for source, target in plan(list(MODULES))}
     allowed.add(str(Path.home() / '.config/debian-i3-dotfiles/wallpaper-path'))
+    allowed.add(str(Path.home() / '.local/bin/xwinwrap'))
     manifest = json.loads((backup / 'manifest.json').read_text())
     if manifest.get('version') != 1 or manifest.get('home') != str(Path.home()):
         raise ValueError('Backup version or home does not match this user.')
@@ -293,6 +294,8 @@ def package_names(modules):
                           'qt': ['qt5ct'], 'fastfetch': ['fastfetch']}.items():
         if module in modules:
             packages.extend(names)
+    if 'core' in modules and not shutil.which('xwinwrap'):
+        packages.extend(['build-essential', 'libx11-dev', 'libxext-dev', 'libxrender-dev'])
     return list(dict.fromkeys(packages))
 
 
@@ -306,8 +309,26 @@ def check_system():
         print('You are using Wayland. Installation is allowed; select an X11/i3 session after logging out.')
 
 
+def xwinwrap_plan(staging):
+    """Compile pinned source as the user; installation remains transactional."""
+    source = ROOT / 'vendor/xwinwrap/xwinwrap.c'
+    if hashlib.sha256(source.read_bytes()).hexdigest() != '00b7ec706bad901a3d224653575d8d05e878e3b4535844a624f73ceff29e04e8':
+        raise ValueError('Bundled xwinwrap source checksum mismatch.')
+    compiler = shutil.which('cc')
+    if not compiler:
+        raise ValueError('Building xwinwrap requires build-essential and X11 development packages. Approve the package step.')
+    binary = staging / 'xwinwrap'
+    subprocess.run([compiler, '-O2', '-Wall', str(source), '-o', str(binary),
+                    '-lX11', '-lXext', '-lXrender'], check=True, timeout=120)
+    binary.chmod(0o755)
+    return [(binary, Path.home() / '.local/bin/xwinwrap')]
+
+
 def setup_packages(modules, enabled):
+    build = 'core' in modules and not shutil.which('xwinwrap')
     packages = package_names(modules)
+    if build:
+        print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
     print('\nDebian packages: ' + ' '.join(packages))
     print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
     if not enabled:
@@ -322,6 +343,7 @@ def setup_packages(modules, enabled):
     subprocess.run(['sudo', 'apt-get', 'update'], check=True)
     # Do not use -y: apt displays its actual transaction and requests approval.
     subprocess.run(['sudo', 'apt-get', 'install', *packages], check=True)
+    return build
 
 
 def diagnostics(modules):
@@ -412,7 +434,9 @@ def prepare(files, args, staging):
         video = args.wallpaper.expanduser().resolve() if args.wallpaper else bundled_video
         if args.wallpaper and (not video.is_file() or '\n' in str(video)):
             raise ValueError('Wallpaper must be an existing local video file.')
-        missing = [name for name in ('mpv', 'xwinwrap') if not shutil.which(name)]
+        staged_xwinwrap = any(target == Path.home() / '.local/bin/xwinwrap' for _, target in result)
+        missing = [name for name in ('mpv', 'xwinwrap')
+                   if not shutil.which(name) and not (name == 'xwinwrap' and staged_xwinwrap)]
         if missing and not args.wallpaper:
             print('Wallpaper saved. Playback requires: ' + ', '.join(missing) + '.')
         if missing and args.wallpaper:
@@ -486,9 +510,10 @@ def main():
     if not args.yes and not ask('Apply this selection? Existing managed files will be backed up.'):
         print('Cancelled. No files changed.')
         return 0
+    build_xwinwrap = False
     if not args.files_only:
         check_system()
-        setup_packages(modules, enabled=not args.yes)
+        build_xwinwrap = setup_packages(modules, enabled=not args.yes)
         diagnostics(modules)
         if 'core' in modules and not args.yes:
             if not args.shell and not shutil.which('zsh'):
@@ -498,6 +523,12 @@ def main():
                     raise ValueError('Install zsh or choose --shell bash before installing core.')
     files = [pair for pair in files if pair[1].parent != font_directory()] + font_plan(modules, args.font)
     with tempfile.TemporaryDirectory(prefix='dotfiles-') as folder:
+        if build_xwinwrap:
+            target = Path.home() / '.local/bin/xwinwrap'
+            safe_target(target)
+            if target.exists():
+                raise ValueError('Existing ~/.local/bin/xwinwrap is not on PATH; add ~/.local/bin to PATH before retrying.')
+            files.extend(xwinwrap_plan(Path(folder)))
         files = prepare(files, args, Path(folder))
         for source, target in files:
             safe_target(target)

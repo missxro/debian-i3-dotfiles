@@ -30,6 +30,40 @@ class InstallerTests(unittest.TestCase):
                 self.assertTrue(prompt.call_args.args[0].endswith(' [Y/n] '))
                 self.assertEqual(run.call_count, expected_runs)
 
+    def test_xwinwrap_build_is_staged_without_root(self):
+        spec = importlib.util.spec_from_file_location('installer_xwinwrap', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            staging = Path(folder)
+            def compile_binary(argv, **kwargs):
+                self.assertNotIn('sudo', argv)
+                Path(argv[argv.index('-o') + 1]).write_bytes(b'compiled')
+            with mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/cc'), \
+                 mock.patch.object(installer.subprocess, 'run', side_effect=compile_binary):
+                files = installer.xwinwrap_plan(staging)
+            self.assertEqual(files[0][0].read_bytes(), b'compiled')
+            self.assertEqual(files[0][1], Path.home() / '.local/bin/xwinwrap')
+            self.assertTrue(files[0][0].stat().st_mode & 0o111)
+
+    def test_package_approval_reports_xwinwrap_build(self):
+        spec = importlib.util.spec_from_file_location('installer_build_approval', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        def which(name):
+            return None if name == 'xwinwrap' else '/usr/bin/' + name
+        with mock.patch.object(installer.shutil, 'which', side_effect=which), \
+             mock.patch.object(installer.subprocess, 'run') as run:
+            with mock.patch.object(installer, 'ask', return_value=False):
+                self.assertFalse(installer.setup_packages(['core'], True))
+                run.assert_not_called()
+            with mock.patch.object(installer, 'ask', return_value=True):
+                self.assertTrue(installer.setup_packages(['core'], True))
+                self.assertIn('libxrender-dev', run.call_args.args[0])
+            with mock.patch.object(installer, 'ask') as ask:
+                self.assertFalse(installer.setup_packages(['core'], False))
+                ask.assert_not_called()
+
     def test_default_wallpaper_installed_and_restored(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)
