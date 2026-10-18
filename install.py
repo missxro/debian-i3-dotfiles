@@ -314,7 +314,7 @@ def setup_packages(modules, enabled):
         return
     if 'core' in modules and shutil.which('i3') is None:
         print('i3 is missing. This step installs it; an existing i3 session is not required.')
-    if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?'):
+    if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?', default=True):
         return
     if not shutil.which('sudo') or not shutil.which('apt-get'):
         raise ValueError('sudo/apt-get unavailable. Ask your administrator to install the listed packages.')

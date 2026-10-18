@@ -17,6 +17,19 @@ class InstallerTests(unittest.TestCase):
                                    'XDG_STATE_HOME': str(home / '.local/state')},
                               input=input, capture_output=True, text=True)
 
+    def test_package_prompt_defaults_to_yes(self):
+        spec = importlib.util.spec_from_file_location('installer_prompt', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        for answer, expected_runs in [('', 2), ('n', 0)]:
+            with self.subTest(answer=answer), \
+                 mock.patch('builtins.input', return_value=answer) as prompt, \
+                 mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/tool'), \
+                 mock.patch.object(installer.subprocess, 'run') as run:
+                installer.setup_packages(['core'], True)
+                self.assertTrue(prompt.call_args.args[0].endswith(' [Y/n] '))
+                self.assertEqual(run.call_count, expected_runs)
+
     def test_default_includes_fastfetch_photo(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)
