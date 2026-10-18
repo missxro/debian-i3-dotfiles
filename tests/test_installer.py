@@ -22,7 +22,9 @@ class InstallerTests(unittest.TestCase):
             home = Path(folder)
             result = self.run_installer(home, '--dry-run', '--modules', 'core,fastfetch')
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('DEBIAN', result.stdout)
+            self.assertIn('by xro', result.stdout)
+            self.assertIn('|____/ \\___/ |_| |_|', result.stdout)
+            self.assertNotIn('DEBIAN', result.stdout)
             self.assertIn('i3/config', result.stdout)
             self.assertEqual(list(home.iterdir()), [])
 
