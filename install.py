@@ -205,6 +205,11 @@ def restore(backup, dry_run):
             manifest['restored'] = True
             write_json(backup / 'manifest.json', manifest)
         except (OSError, KeyboardInterrupt):
+            # Atomic manifest replacement is the commit point. An interruption
+            # after it must not roll the files back to the installed state.
+            persisted = json.loads((backup / 'manifest.json').read_text())
+            if persisted.get('restored'):
+                raise
             for target, current in staged:
                 if current is None:
                     target.unlink(missing_ok=True)

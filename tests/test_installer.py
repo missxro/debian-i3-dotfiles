@@ -239,6 +239,41 @@ class InstallerTests(unittest.TestCase):
                 import json
                 self.assertFalse(json.loads((backup / 'manifest.json').read_text())['restored'])
 
+    def test_restore_manifest_commit_boundary(self):
+        import json
+        spec = importlib.util.spec_from_file_location('installer_manifest_boundary', ROOT / 'install.py')
+        assert spec is not None and spec.loader is not None
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        for committed, error in ((False, OSError), (True, OSError),
+                                 (False, KeyboardInterrupt), (True, KeyboardInterrupt)):
+            with self.subTest(committed=committed, error=error), tempfile.TemporaryDirectory() as folder:
+                home = Path(folder)
+                target = home / '.config/i3/config'
+                target.parent.mkdir(parents=True)
+                target.write_text('original configuration')
+                result = self.run_installer(home, '--yes', '--files-only')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                installed = target.read_bytes()
+                backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+                real_write = installer.write_json
+
+                def interrupted_write(path, value):
+                    if committed:
+                        real_write(path, value)
+                    raise error('simulated manifest interruption')
+
+                with mock.patch.dict(os.environ, {'HOME': str(home),
+                                     'XDG_CONFIG_HOME': str(home / '.config'),
+                                     'XDG_STATE_HOME': str(home / '.local/state')}):
+                    with mock.patch.object(installer, 'write_json', side_effect=interrupted_write):
+                        with self.assertRaises(error):
+                            installer.restore(backup, False)
+                    self.assertEqual(json.loads((backup / 'manifest.json').read_text())['restored'], committed)
+                    self.assertEqual(target.read_bytes(), b'original configuration' if committed else installed)
+                    installer.restore(backup, False)
+                    self.assertEqual(target.read_text(), 'original configuration')
+
     def test_manifest_write_preserves_existing_temporary_file(self):
         import stat
         spec = importlib.util.spec_from_file_location('installer_test_json', ROOT / 'install.py')
