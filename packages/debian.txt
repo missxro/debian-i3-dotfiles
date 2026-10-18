@@ -17,6 +17,7 @@ python3
 python3-dbus
 python3-gi
 fontconfig
+fonts-dejavu-core
 fonts-font-awesome
 fonts-noto-color-emoji
 # DepartureMono Nerd Font and xwinwrap are separate manual prerequisites.

@@ -1,6 +1,45 @@
-# Manual setup
+# Setup
 
-> Work in progress. Back up existing files before replacing them. No installer or rollback is provided yet.
+## Interactive installer
+
+Run as your desktop user, not with `sudo`:
+
+```sh
+./install.sh --dry-run --modules core,gtk,qt,fastfetch
+./install.sh
+```
+
+The ASCII-headed wizard selects optional GTK, Qt and Fastfetch components, lists affected files and asks before applying. It offers Debian 13 packages through `sudo apt-get`, with separate approval and apt's own transaction prompt. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing.
+
+```sh
+# Explicit components, still interactive
+./install.sh --modules core,fastfetch
+# Already have dependencies? Skip OS/package setup
+./install.sh --files-only
+# Unattended file placement; --yes never approves apt
+./install.sh --files-only --yes --modules core,fastfetch
+# Use an already installed font and change only Kitty's shell
+./install.sh --font 'DejaVu Sans Mono' --shell bash
+# Existing local video; requires mpv and xwinwrap
+./install.sh --wallpaper "$HOME/Videos/wallpaper.mp4"
+```
+
+Core installs i3, Kitty, Picom, Polybar and helper scripts. Files are copied, not linked: the clone can move afterward. Unrelated files are retained; identical content and permissions are left untouched on repeat runs. This rice requires `$HOME/.config` because its startup paths use that convention. Other `XDG_CONFIG_HOME` values and symlinked destinations are refused instead of silently writing elsewhere.
+
+Original files and a manifest are saved under `${XDG_STATE_HOME:-$HOME/.local/state}/debian-i3-dotfiles/backups/`. The installer prints the exact directory and restore command:
+
+```sh
+./install.sh --restore "$HOME/.local/state/debian-i3-dotfiles/backups/<backup>" --dry-run
+./install.sh --restore "$HOME/.local/state/debian-i3-dotfiles/backups/<backup>"
+```
+
+Backups must remain inside that private state directory, owned by your user, with no symlinked or group/world-writable parents. Restore reinstates originals with their permissions and removes files created by that installation. It refuses later local edits and damaged backups: save/move edits deliberately before retrying. Backups, empty directories and installed packages are retained. File replacement is atomic; failed/interrupted placement or restore attempts rollback. Rollback also needs a writable filesystem; power loss, hard kill or persistent disk errors may require manual recovery from the retained backups. Restore multiple backups newest first, using the matching installer version.
+
+The wizard offers the packaged DejaVu font as an alternative to the external Nerd Font (some glyphs may be absent), bash for Kitty when zsh is missing, and a local video path. It never runs `chsh`, reloads your desktop, rewrites login settings, replaces your audio stack or configures a display manager. Start an i3 X11 session yourself when ready.
+
+**External assets are not downloaded:** DepartureMono Nerd Font Mono, Graphite-Dark, the Kitty cursor, xwinwrap and video files must already exist for the exact original appearance. Decline GTK if its theme/cursor assets are missing. Powerlevel10k and personal Zsh configuration are not included. Qt may need `QT_QPA_PLATFORMTHEME=qt5ct` in your session. Missing dependencies are reported; declining apt does not satisfy them. The Firefox and Flameshot shortcuts require those optional apps separately.
+
+## Manual setup
 
 
 ## Requirements
@@ -28,7 +67,7 @@ Optional GTK settings assume Graphite-Dark and the Kitty cursor are already inst
 
 The i3 startup lines use conventional `~/.config/` and `~/.local/bin/` locations. Adjust them if yours differ. The wallpaper data file honors `XDG_CONFIG_HOME`.
 
-**Do not overwrite a working desktop blindly.** Automatic backup, installation, and rollback are not implemented yet.
+**Do not overwrite a working desktop blindly.** The installer above backs up managed files; when copying manually, make your own backups first.
 
 ### Choose a wallpaper
 

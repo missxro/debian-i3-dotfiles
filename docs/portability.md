@@ -29,6 +29,6 @@ The i3 configuration was checked with the Debian i3 parser without reloading the
 
 A visual check on a disposable Debian 13 X11 session is still needed before calling this a tested fresh-install experience. Do not assume a passing unit suite makes the setup safe to copy over an existing desktop without a backup.
 
-## Next stage
+## Installer boundary
 
-An automatic installer is deliberately not part of this version. It should add explicit component selection, dependency checks, dry-run, backup and restore, idempotent placement, and a way to leave system-wide/login settings untouched. Credits and licensing review are deferred to a later pass, as requested; existing metadata in imported files is preserved.
+`install.sh` provides interactive component selection, optional Debian package setup, dry-run, idempotent file placement, private backups and guarded restore. Login-shell, display-manager and running-session settings remain untouched. It does not download/build third-party assets or prove GPU/rendering compatibility. The original external font, GTK theme, cursor and xwinwrap remain separate prerequisites. Credits and licensing review are deferred to a later pass, as requested; existing metadata in imported files is preserved.

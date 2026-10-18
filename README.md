@@ -44,9 +44,11 @@ tests/      Repository, launcher and MPRIS checks
 1. **Requirements:** existing Debian 13 i3/X11 session and an audio server.
 2. **Packages:** [core](packages/debian.txt) / [optional](packages/optional-debian.txt).
 3. **Extra components:** DepartureMono Nerd Font; xwinwrap and a local video for animated wallpaper.
-4. **Back up first**, then follow the [manual setup guide](docs/setup.md).
+4. Preview with `./install.sh --dry-run`, then run `./install.sh` for the interactive installer.
 
-> **Work in progress:** no automatic installer, backup or rollback yet. Optional theme/cursor assets are not bundled. Cloning this repository does not change your desktop.
+The installer asks before copying files or installing packages, backs up originals and supports restore. See [setup & recovery](docs/setup.md) for component selection and options.
+
+> Optional theme/cursor assets and xwinwrap are not bundled or downloaded. Cloning this repository does not change your desktop.
 
 ## Checks
 
