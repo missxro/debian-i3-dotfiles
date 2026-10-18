@@ -42,6 +42,7 @@ def plan(modules):
                 if source.is_file() and '__pycache__' not in source.parts:
                     files.append((source, config / source.relative_to(ROOT / 'config')))
     if 'core' in modules:
+        files.append((ROOT / 'assets/wallpapers/lain.mp4', home / '.local/share/debian-i3-dotfiles/lain.mp4'))
         files.extend((source, home / '.local/bin' / source.name)
                      for source in sorted((ROOT / 'bin').iterdir()) if source.is_file())
     return files
@@ -405,12 +406,16 @@ def prepare(files, args, staging):
             settings.write(output)
         result = [(s, t) for s, t in result if t != gtk_target]
         result.append((configured, gtk_target))
-    if args.wallpaper:
-        video = args.wallpaper.expanduser().resolve()
-        if not video.is_file() or '\n' in str(video):
+    bundled_video = Path.home() / '.local/share/debian-i3-dotfiles/lain.mp4'
+    has_bundled = any(target == bundled_video for _, target in result)
+    if args.wallpaper or has_bundled:
+        video = args.wallpaper.expanduser().resolve() if args.wallpaper else bundled_video
+        if args.wallpaper and (not video.is_file() or '\n' in str(video)):
             raise ValueError('Wallpaper must be an existing local video file.')
         missing = [name for name in ('mpv', 'xwinwrap') if not shutil.which(name)]
-        if missing:
+        if missing and not args.wallpaper:
+            print('Wallpaper saved. Playback requires: ' + ', '.join(missing) + '.')
+        if missing and args.wallpaper:
             raise ValueError('Video wallpaper needs: ' + ', '.join(missing) + '. Install them separately or skip --wallpaper.')
         source = staging / 'wallpaper-path'
         source.write_text(str(video) + '\n')
@@ -491,8 +496,6 @@ def main():
                     args.shell = 'bash'
                 else:
                     raise ValueError('Install zsh or choose --shell bash before installing core.')
-            if not args.wallpaper and ask('Configure a local video wallpaper? Requires mpv and xwinwrap.'):
-                args.wallpaper = Path(input('Video path (no download): ').strip())
     files = [pair for pair in files if pair[1].parent != font_directory()] + font_plan(modules, args.font)
     with tempfile.TemporaryDirectory(prefix='dotfiles-') as folder:
         files = prepare(files, args, Path(folder))

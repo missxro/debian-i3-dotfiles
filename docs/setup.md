@@ -54,7 +54,7 @@ Additional components not bundled here:
 
 DepartureMono Nerd Font Regular and Mono are bundled under `assets/fonts/departure-mono/`. For manual setup, copy the OTFs and LICENSE into `~/.local/share/fonts/departure-mono/` and run `fc-cache -f`. Alternatively change font names in i3, Polybar, and Kitty.
 - **xwinwrap**, only for animated wallpapers. No automatic download or build is provided yet.
-- A local video of your choice. With no configured video, wallpaper startup is a no-op.
+- The bundled Lain video is copied and configured automatically without a prompt. `--wallpaper` overrides it. Missing mpv/xwinwrap are reported; install them before playback.
 - An existing PulseAudio-compatible server, such as PipeWire with its PulseAudio interface. The repo does not replace your audio stack.
 
 Optional GTK appearance assumes Graphite-Dark is already installed. Cursor selection is independent. Qt5ct requires `QT_QPA_PLATFORMTHEME=qt5ct` in your own session environment. None of these optional settings is required for the core desktop.

@@ -30,6 +30,22 @@ class InstallerTests(unittest.TestCase):
                 self.assertTrue(prompt.call_args.args[0].endswith(' [Y/n] '))
                 self.assertEqual(run.call_count, expected_runs)
 
+    def test_default_wallpaper_installed_and_restored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            video = home / '.local/share/debian-i3-dotfiles/lain.mp4'
+            self.assertEqual(video.read_bytes(), (ROOT / 'assets/wallpapers/lain.mp4').read_bytes())
+            setting = home / '.config/debian-i3-dotfiles/wallpaper-path'
+            self.assertEqual(setting.read_text(), str(video) + '\n')
+            self.assertNotIn('Configure a local video wallpaper?', result.stdout)
+            backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+            restored = self.run_installer(home, '--yes', '--restore', str(backup))
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertFalse(video.exists())
+            self.assertFalse(setting.exists())
+
     def test_default_includes_fastfetch_photo(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)
