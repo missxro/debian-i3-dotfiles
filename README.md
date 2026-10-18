@@ -19,7 +19,8 @@ My Debian 13 rice — i3wm, Polybar, Kitty, Picom & animated wallpapers.
 - **Compositor:** Picom / blur / transparency / fading
 - **Wallpaper:** xwinwrap + MPV / one video per active monitor
 - **Font:** DepartureMono Nerd Font Mono
-- **Optional:** GTK3 / Graphite-Dark / Qt5ct / Fastfetch
+- **Included by default:** Fastfetch with bundled artwork
+- **Optional:** GTK3 / Graphite-Dark / Qt5ct / Kitty cursor download
 
 ## Features
 
@@ -48,7 +49,7 @@ tests/      Repository, launcher and MPRIS checks
 
 The installer asks before copying files or installing packages, backs up originals and supports restore. See [setup & recovery](docs/setup.md) for component selection and options.
 
-> Optional theme/cursor assets and xwinwrap are not bundled or downloaded. Cloning this repository does not change your desktop.
+> The Kitty cursor can be downloaded with explicit approval and checksum verification. Other external theme assets and xwinwrap are not downloaded. Cloning this repository does not change your desktop.
 
 ## Checks
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Interactive, reversible user configuration installer. Python standard library only."""
 import argparse
+import configparser
+import cursor
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -171,7 +173,9 @@ def restore(backup, dry_run):
         return
     for entry in manifest['entries']:
         target = Path(entry['target'])
-        if str(target) not in allowed:
+        cursor_root = Path.home() / '.icons/Kitty'
+        cursor_target = (target.is_relative_to(cursor_root) and target != cursor_root)
+        if str(target) not in allowed and not cursor_target and target != Path.home() / '.icons/default/index.theme':
             raise ValueError('Backup destination is not managed by this installer: ' + str(target))
         safe_target(target)
         original = entry['original']
@@ -298,7 +302,22 @@ def prepare(files, args, staging):
     """Customize copies, never the versioned originals."""
     result = []
     for index, (source, target) in enumerate(files):
-        if source.name == 'kitty.conf' and (args.font or args.shell):
+        if source.name == 'settings.ini' and source.parent.name == 'gtk-3.0' and not getattr(args, 'cursor', False):
+            settings = configparser.ConfigParser(interpolation=None)
+            settings.read_string(source.read_text())
+            previous = configparser.ConfigParser(interpolation=None)
+            safe_target(target)
+            if target.exists():
+                previous.read_string(target.read_text())
+            for key in ('gtk-cursor-theme-name', 'gtk-cursor-theme-size'):
+                settings.remove_option('Settings', key)
+                if previous.has_option('Settings', key):
+                    settings.set('Settings', key, previous.get('Settings', key))
+            copy = staging / str(index)
+            with copy.open('w') as output:
+                settings.write(output)
+            source = copy
+        elif source.name == 'kitty.conf' and (args.font or args.shell):
             text = source.read_text()
             if args.font:
                 text = text.replace('font_family DepartureMono Nerd Font Mono', 'font_family ' + args.font)
@@ -321,6 +340,28 @@ def prepare(files, args, staging):
             copy.chmod(stat.S_IMODE(source.stat().st_mode))
             source = copy
         result.append((source, target))
+    if getattr(args, 'cursor', False):
+        archive = staging / 'Kitty.tar.gz'
+        cursor.download(archive)
+        result.extend(cursor.unpack(archive, staging / 'cursor'))
+        default = staging / 'cursor-default'
+        default.write_text('[Icon Theme]\nInherits=Kitty\n')
+        result.append((default, Path.home() / '.icons/default/index.theme'))
+        gtk_target = Path.home() / '.config/gtk-3.0/settings.ini'
+        gtk_source = next((s for s, t in result if t == gtk_target), gtk_target)
+        safe_target(gtk_target)
+        settings = configparser.ConfigParser(interpolation=None)
+        if gtk_source.exists():
+            settings.read_string(gtk_source.read_text())
+        if not settings.has_section('Settings'):
+            settings.add_section('Settings')
+        settings.set('Settings', 'gtk-cursor-theme-name', 'Kitty')
+        settings.set('Settings', 'gtk-cursor-theme-size', '48')
+        configured = staging / 'cursor-gtk.ini'
+        with configured.open('w') as output:
+            settings.write(output)
+        result = [(s, t) for s, t in result if t != gtk_target]
+        result.append((configured, gtk_target))
     if args.wallpaper:
         video = args.wallpaper.expanduser().resolve()
         if not video.is_file() or '\n' in str(video):
@@ -344,7 +385,11 @@ def main():
     parser.add_argument('--font', help='Installed font family for Kitty and Polybar; no font download.')
     parser.add_argument('--shell', choices=['zsh', 'bash'], help='Kitty shell only; never runs chsh.')
     parser.add_argument('--wallpaper', type=Path, help='Existing local video; requires mpv and xwinwrap.')
+    parser.add_argument('--cursor', action='store_true', help='Download and apply the checksum-pinned Kitty cursor.')
+    parser.add_argument('--no-cursor', action='store_true', help='Skip the initial cursor question and preserve the current cursor.')
     args = parser.parse_args()
+    if args.cursor and args.no_cursor:
+        parser.error('--cursor and --no-cursor are mutually exclusive.')
     for value in (args.font,):
         if value is not None and (not value.strip() or any(char in value for char in '\n\r;=')):
             parser.error('Invalid font family.')
@@ -364,9 +409,11 @@ def main():
     modules = list(dict.fromkeys(args.modules.split(',')))
     if any(module not in MODULES for module in modules):
         parser.error('Unknown module; choose core,gtk,qt,fastfetch.')
+    if not args.dry_run and not args.yes and not args.cursor and not args.no_cursor:
+        args.cursor = ask('Download and apply my Kitty cursor (black cat, by Noiire; Linux port by pxryzl)?')
     if not args.dry_run and not args.yes and args.modules == 'core,fastfetch':
         print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers + Fastfetch with bundled artwork.')
-        for module, label in [('gtk', 'GTK settings (Graphite-Dark and Kitty cursor must already exist)'),
+        for module, label in [('gtk', 'GTK appearance (requires Graphite-Dark; cursor is selected separately)'),
                               ('qt', 'Qt settings (qt5ct)')]:
             if ask('Include ' + label + '?'):
                 modules.append(module)
@@ -377,6 +424,8 @@ def main():
         safe_target(target)
         print(f'  {source.relative_to(ROOT)} -> {target}')
     if args.dry_run:
+        if args.cursor:
+            print('Cursor: download verified Kitty archive; install ~/.icons/Kitty; configure ~/.icons/default/index.theme and GTK cursor settings (not downloaded or written).')
         print('\nPackages (not executed): ' + ' '.join(package_names(modules)))
         print(f'Font: {args.font or "DepartureMono Nerd Font Mono"}; Kitty shell: {args.shell or "zsh"}')
         if args.wallpaper:

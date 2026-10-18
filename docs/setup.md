@@ -37,7 +37,9 @@ Backups must remain inside that private state directory, owned by your user, wit
 
 The wizard offers the packaged DejaVu font as an alternative to the external Nerd Font (some glyphs may be absent), bash for Kitty when zsh is missing, and a local video path. It never runs `chsh`, reloads your desktop, rewrites login settings, replaces your audio stack or configures a display manager. Start an i3 X11 session yourself when ready.
 
-**External assets are not downloaded:** DepartureMono Nerd Font Mono, Graphite-Dark, the Kitty cursor, xwinwrap and video files must already exist for the exact original appearance. Decline GTK if its theme/cursor assets are missing. Powerlevel10k and personal Zsh configuration are not included. Qt may need `QT_QPA_PLATFORMTHEME=qt5ct` in your session. Missing dependencies are reported; declining apt does not satisfy them. The Firefox and Flameshot shortcuts require those optional apps separately.
+**Optional cursor download:** the initial question offers Kitty Cursor (Noiire; Linux port by pxryzl, product 2275753). `--cursor` opts in explicitly; `--no-cursor` skips it. The archive is downloaded over HTTPS and verified against a pinned SHA-256 before unpacking. It is installed per-user under `~/.icons/Kitty`; GTK cursor settings and `~/.icons/default/index.theme` select it on the next session, with backup/restore. Declining preserves the existing cursor, even when GTK appearance is selected. No remote code is executed. `--dry-run --cursor` never downloads.
+
+**Other external assets are not downloaded:** DepartureMono Nerd Font Mono, Graphite-Dark, xwinwrap and video files must already exist for the exact original appearance. Decline GTK if Graphite-Dark is missing. Powerlevel10k and personal Zsh configuration are not included. Qt may need `QT_QPA_PLATFORMTHEME=qt5ct` in your session. Missing dependencies are reported; declining apt does not satisfy them. The Firefox and Flameshot shortcuts require those optional apps separately.
 
 ## Manual setup
 
@@ -55,7 +57,7 @@ Additional components not bundled here:
 - A local video of your choice. With no configured video, wallpaper startup is a no-op.
 - An existing PulseAudio-compatible server, such as PipeWire with its PulseAudio interface. The repo does not replace your audio stack.
 
-Optional GTK settings assume Graphite-Dark and the Kitty cursor are already installed. Qt5ct requires `QT_QPA_PLATFORMTHEME=qt5ct` in your own session environment. None of these optional settings is required for the core desktop.
+Optional GTK appearance assumes Graphite-Dark is already installed. Cursor selection is independent. Qt5ct requires `QT_QPA_PLATFORMTHEME=qt5ct` in your own session environment. None of these optional settings is required for the core desktop.
 
 ## Trying it safely
 
@@ -91,7 +93,7 @@ The previews need X11 and `xrandr` to discover active monitors. Normal launch al
 
 Launchers use the existing display layout; they do not change modes, refresh rates, positions, or the primary display. Hotplug requires restarting the relevant supervisor; live reconfiguration is not included yet.
 
-### Fastfetch (optional)
+### Fastfetch (included by default)
 
 Back up `~/.config/fastfetch/`, then copy the entire `config/fastfetch/` directory there, including `roxy-mushoku-tensei-2.png`. Run `fastfetch` inside Kitty to display the bundled artwork using `kitty-direct`. The image path uses the current user's home, not the source machine's path. If you use a custom config directory, update `logo.source` accordingly.
 
