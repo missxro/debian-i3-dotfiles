@@ -1,0 +1,21 @@
+# Local desktop state and private inputs
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_*
+wallpaper-path
+local/
+private/
+backups/
+*.log
+*.bak
+*~
+*.swp
+*.swo
+*.swn
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

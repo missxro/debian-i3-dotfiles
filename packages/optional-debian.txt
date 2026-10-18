@@ -1,0 +1,6 @@
+# Referenced optional apps / settings; not needed to launch the core rice.
+flameshot
+firefox-esr
+qt5ct
+lxappearance
+fastfetch
