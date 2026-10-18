@@ -6,6 +6,10 @@ My Debian 13 rice — i3wm, Polybar, Kitty, Picom & animated wallpapers.
 
 ![Desktop preview](assets/desktop.gif)
 
+### Polybar
+
+![Polybar modules and controls explained](assets/polybar-described.png)
+
 ## Setup
 
 - **OS:** Debian 13 · X11
