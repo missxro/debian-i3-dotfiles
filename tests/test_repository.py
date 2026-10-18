@@ -50,6 +50,9 @@ class PublicBoundaryTests(unittest.TestCase):
             for path in folder.rglob("*"):
                 if not path.is_file() or "__pycache__" in path.parts:
                     continue
+                if path == ROOT / "config/fastfetch/roxy-mushoku-tensei-2.png":
+                    self.assertTrue(path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+                    continue
                 text = path.read_text()
                 with self.subTest(file=str(path.relative_to(ROOT))):
                     self.assertNotRegex(text, r"/home/[^\s\"']+|/Users/|/opt/(?:data)/|[A-Za-z]:\\Users\\")

@@ -14,7 +14,7 @@ The original desktop's Ayaka palette, Kitty settings, Picom blur/fading, i3 gaps
 - Focus uses h/j/k/l or arrows rather than a keyboard-layout-specific letter. Horizontal split uses Mod+b.
 - Floating-only color directives that produced parser errors were replaced with valid i3 client color directives.
 - No obsolete Picom experimental backend flag; the opacity-rule list is terminated correctly.
-- Fastfetch uses a built-in logo and automatic GPU information rather than a private image path or fixed model suffix.
+- Fastfetch includes the original artwork with a portable home-relative path and automatic GPU information rather than a fixed model suffix.
 - No dangerous direct terminate-user shortcut; exiting the session asks for confirmation.
 
 ## Optional pieces, not silently installed
