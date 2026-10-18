@@ -9,7 +9,7 @@ Run as your desktop user, not with `sudo`:
 ./install.sh
 ```
 
-The ASCII-headed wizard selects optional GTK, Qt and Fastfetch components, lists affected files and asks before applying. It offers Debian 13 packages through `sudo apt-get`, with separate approval and apt's own transaction prompt. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing.
+The ASCII-headed wizard includes Fastfetch and its bundled photo by default, without a selection question, and selects optional GTK and Qt components. It lists affected files and asks before applying. It offers Debian 13 packages through `sudo apt-get`, including i3 when missing, with separate approval and apt's own transaction prompt. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing. An existing i3 session is not required to run the installer; log out and select an X11/i3 session afterward.
 
 ```sh
 # Explicit components, still interactive

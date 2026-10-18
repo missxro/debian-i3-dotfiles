@@ -17,6 +17,26 @@ class InstallerTests(unittest.TestCase):
                                    'XDG_STATE_HOME': str(home / '.local/state')},
                               input=input, capture_output=True, text=True)
 
+    def test_default_includes_fastfetch_photo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            photo = home / '.config/fastfetch/roxy-mushoku-tensei-2.png'
+            self.assertEqual(photo.read_bytes(), (ROOT / 'config/fastfetch/roxy-mushoku-tensei-2.png').read_bytes())
+            self.assertNotIn('Include Fastfetch', result.stdout)
+
+    def test_missing_i3_installed_after_approval(self):
+        spec = importlib.util.spec_from_file_location('installer_packages', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer, 'ask', return_value=True), \
+             mock.patch.object(installer.shutil, 'which', side_effect=lambda name: None if name == 'i3' else '/usr/bin/' + name), \
+             mock.patch.object(installer.subprocess, 'run') as run:
+            installer.setup_packages(['core', 'fastfetch'], True)
+            self.assertIn('i3-wm', run.call_args_list[1].args[0])
+            self.assertIn('fastfetch', run.call_args_list[1].args[0])
+
     def test_dry_run_never_writes(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)

@@ -255,7 +255,7 @@ def check_system():
     if 'ID=debian' not in release.splitlines() or 'VERSION_ID="13"' not in release.splitlines():
         raise ValueError('Automated package setup targets Debian 13. Use --files-only on other systems.')
     if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
-        raise ValueError('This configuration requires an X11/i3 session, not Wayland.')
+        print('You are using Wayland. Installation is allowed; select an X11/i3 session after logging out.')
 
 
 def setup_packages(modules, enabled):
@@ -265,6 +265,8 @@ def setup_packages(modules, enabled):
     if not enabled:
         print('Package installation skipped (--yes never grants permission for apt).')
         return
+    if 'core' in modules and shutil.which('i3') is None:
+        print('i3 is missing. This step installs it; an existing i3 session is not required.')
     if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?'):
         return
     if not shutil.which('sudo') or not shutil.which('apt-get'):
@@ -335,7 +337,7 @@ def prepare(files, args, staging):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Print planned files; never write or install packages.')
-    parser.add_argument('--modules', default='core', help='Comma-separated: core,gtk,qt,fastfetch')
+    parser.add_argument('--modules', default='core,fastfetch', help='Comma-separated: core,gtk,qt,fastfetch')
     parser.add_argument('--yes', action='store_true', help='Accept file installation/restore; does not install packages.')
     parser.add_argument('--files-only', action='store_true', help='Only copy files; skip OS/dependency setup.')
     parser.add_argument('--restore', type=Path, help='Restore a backup directory, refusing later local edits.')
@@ -362,10 +364,10 @@ def main():
     modules = list(dict.fromkeys(args.modules.split(',')))
     if any(module not in MODULES for module in modules):
         parser.error('Unknown module; choose core,gtk,qt,fastfetch.')
-    if not args.dry_run and not args.yes and args.modules == 'core':
-        print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers.')
+    if not args.dry_run and not args.yes and args.modules == 'core,fastfetch':
+        print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers + Fastfetch with bundled artwork.')
         for module, label in [('gtk', 'GTK settings (Graphite-Dark and Kitty cursor must already exist)'),
-                              ('qt', 'Qt settings (qt5ct)'), ('fastfetch', 'Fastfetch + bundled artwork')]:
+                              ('qt', 'Qt settings (qt5ct)')]:
             if ask('Include ' + label + '?'):
                 modules.append(module)
     if args.wallpaper and 'core' not in modules:
