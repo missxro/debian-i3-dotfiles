@@ -4,11 +4,7 @@ My Debian 13 rice — i3wm, Polybar, Kitty, Picom & animated wallpapers.
 
 ## Preview
 
-*Desktop GIF coming soon.*
-
-<!-- Upload assets/desktop.gif, then replace the line above with:
 ![Desktop preview](assets/desktop.gif)
--->
 
 ## Setup
 
