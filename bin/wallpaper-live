@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Replace this process with mpv embedded in an xwinwrap window."""
+import argparse
+import os
+from pathlib import Path
+import re
+import sys
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('wid', help='Positive decimal or hexadecimal X11 window ID.')
+    parser.add_argument('video', help='Existing video file; use -- before option-looking paths.')
+    args = parser.parse_args()
+    if not re.fullmatch(r'(?:[0-9]+|0[xX][0-9a-fA-F]+)', args.wid):
+        parser.error('Invalid window ID.')
+    if int(args.wid, 16 if args.wid.lower().startswith('0x') else 10) <= 0:
+        parser.error('Window ID must be positive.')
+    try:
+        video = Path(args.video).expanduser().resolve()
+        if not video.is_file():
+            parser.error('Video must be an existing regular file.')
+        argv = ['mpv', '--vo=gpu', '--hwdec=auto-safe', '--no-audio', '--no-border',
+                '--no-config', '--no-window-dragging', '--no-input-default-bindings',
+                '--no-osd-bar', '--no-sub', '--loop-file=inf', '--wid=' + args.wid,
+                '--', str(video)]
+        os.execvp(argv[0], argv)
+    except OSError as error:
+        print(f'wallpaper-live: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
