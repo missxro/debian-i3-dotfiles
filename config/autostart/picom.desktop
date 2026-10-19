@@ -1,0 +1,7 @@
+[Desktop Entry]
+# Per-user override of /etc/xdg/autostart/picom.desktop: i3 starts picom through
+# picom-launch; a second instance started by dex would race it.
+Type=Application
+Name=picom
+Exec=picom
+Hidden=true

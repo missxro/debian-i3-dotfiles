@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Interactive, reversible user configuration installer. Python standard library only."""
 import argparse
+import configparser
+import cursor
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -15,7 +17,7 @@ import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parent
-MODULES = {'core': ['i3', 'kitty', 'picom', 'polybar'],
+MODULES = {'core': ['autostart', 'i3', 'kitty', 'picom', 'polybar'],
            'gtk': ['gtk-3.0'], 'qt': ['qt5ct'], 'fastfetch': ['fastfetch']}
 BANNER = r'''
  ____   ___ _____ _____ ___ _     _____ ____
@@ -40,9 +42,52 @@ def plan(modules):
                 if source.is_file() and '__pycache__' not in source.parts:
                     files.append((source, config / source.relative_to(ROOT / 'config')))
     if 'core' in modules:
+        files.append((ROOT / 'assets/wallpapers/lain.mp4', home / '.local/share/debian-i3-dotfiles/lain.mp4'))
         files.extend((source, home / '.local/bin' / source.name)
                      for source in sorted((ROOT / 'bin').iterdir()) if source.is_file())
     return files
+
+
+FONT_FILES = {
+    'DepartureMono Nerd Font': 'DepartureMonoNerdFont-Regular.otf',
+    'DepartureMono Nerd Font Mono': 'DepartureMonoNerdFontMono-Regular.otf',
+}
+
+
+def font_directory():
+    return Path.home() / '.local/share/fonts/departure-mono'
+
+
+def font_plan(modules, custom_font=None, detect=True):
+    if 'core' not in modules or custom_font:
+        return []
+    families = set()
+    if detect and shutil.which('fc-list'):
+        try:
+            result = subprocess.run(['fc-list', '--format=%{family}\\n'], capture_output=True,
+                                    text=True, check=True, timeout=15)
+            families = {name.strip() for line in result.stdout.splitlines() for name in line.split(',')}
+        except (OSError, subprocess.SubprocessError):
+            pass  # Unknown font state: safely install the bundled fonts per-user.
+    source = ROOT / 'assets/fonts/departure-mono'
+    files = [(source / name, font_directory() / name)
+             for family, name in FONT_FILES.items()
+             if family not in families and not os.path.lexists(font_directory() / name)]
+    if files and not os.path.lexists(font_directory() / 'LICENSE'):
+        files.append((source / 'LICENSE', font_directory() / 'LICENSE'))
+    return files
+
+
+def refresh_font_cache():
+    directory = font_directory()
+    if not directory.is_dir():
+        return
+    try:
+        safe_target(directory / 'probe')
+        subprocess.run(['fc-cache', '-f', str(directory)], check=True,
+                       capture_output=True, timeout=60)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        print('Warning: font files are saved, but font cache refresh failed. Run fc-cache -f after installing fontconfig.')
 
 
 def safe_target(path):
@@ -91,6 +136,13 @@ def state_directory():
     directory = state_path()
     validate_state_path(directory)
     safe_target(directory / 'lock')
+    # Create missing ancestors below $HOME as 0700 too: with umask 002 a plain
+    # mkdir(parents=True) leaves ~/.local(/state) group-writable and every later
+    # run or restore is rejected by validate_state_path().
+    home = Path.home().absolute()
+    for parent in reversed([p for p in directory.parents if home in p.parents]):
+        if not parent.exists():
+            parent.mkdir(mode=0o700)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o077:
         raise ValueError('State directory must be private (0700): ' + str(directory))
@@ -125,7 +177,8 @@ def install(files, state):
         return
     safe_target(state / 'backups' / 'probe')
     backup = state / 'backups' / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8])
-    backup.mkdir(parents=True, mode=0o700)
+    (state / 'backups').mkdir(exist_ok=True, mode=0o700)  # parents=True would ignore mode
+    backup.mkdir(mode=0o700)
     manifest = {'version': 1, 'home': str(Path.home()), 'entries': [], 'restored': False}
     # Prepare every original and the journal before changing any configuration.
     for index, (source, target) in enumerate(changed):
@@ -163,6 +216,7 @@ def restore(backup, dry_run):
         raise ValueError('Backup manifest must belong to you.')
     allowed = {str(target) for source, target in plan(list(MODULES))}
     allowed.add(str(Path.home() / '.config/debian-i3-dotfiles/wallpaper-path'))
+    allowed.add(str(Path.home() / '.local/bin/xwinwrap'))
     manifest = json.loads((backup / 'manifest.json').read_text())
     if manifest.get('version') != 1 or manifest.get('home') != str(Path.home()):
         raise ValueError('Backup version or home does not match this user.')
@@ -171,7 +225,10 @@ def restore(backup, dry_run):
         return
     for entry in manifest['entries']:
         target = Path(entry['target'])
-        if str(target) not in allowed:
+        cursor_root = Path.home() / '.icons/Kitty'
+        cursor_target = (target.is_relative_to(cursor_root) and target != cursor_root)
+        font_target = target in {font_directory() / name for name in (*FONT_FILES.values(), 'LICENSE')}
+        if str(target) not in allowed and not cursor_target and not font_target and target != Path.home() / '.icons/default/index.theme':
             raise ValueError('Backup destination is not managed by this installer: ' + str(target))
         safe_target(target)
         original = entry['original']
@@ -236,6 +293,12 @@ def ask(question, default=False):
         print('Please answer y or n.')
 
 
+def xwinwrap_available():
+    """Match the launcher: ~/.local/bin/xwinwrap counts even when it is not on PATH."""
+    local = Path.home() / '.local/bin/xwinwrap'
+    return bool(shutil.which('xwinwrap')) or (local.is_file() and os.access(local, os.X_OK))
+
+
 def package_names(modules):
     packages = []
     if 'core' in modules:
@@ -245,6 +308,8 @@ def package_names(modules):
                           'qt': ['qt5ct'], 'fastfetch': ['fastfetch']}.items():
         if module in modules:
             packages.extend(names)
+    if 'core' in modules and not xwinwrap_available():
+        packages.extend(['build-essential', 'libx11-dev', 'libxext-dev', 'libxrender-dev'])
     return list(dict.fromkeys(packages))
 
 
@@ -255,23 +320,44 @@ def check_system():
     if 'ID=debian' not in release.splitlines() or 'VERSION_ID="13"' not in release.splitlines():
         raise ValueError('Automated package setup targets Debian 13. Use --files-only on other systems.')
     if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
-        raise ValueError('This configuration requires an X11/i3 session, not Wayland.')
+        print('You are using Wayland. Installation is allowed; select an X11/i3 session after logging out.')
+
+
+def xwinwrap_plan(staging):
+    """Compile pinned source as the user; installation remains transactional."""
+    source = ROOT / 'vendor/xwinwrap/xwinwrap.c'
+    if hashlib.sha256(source.read_bytes()).hexdigest() != '00b7ec706bad901a3d224653575d8d05e878e3b4535844a624f73ceff29e04e8':
+        raise ValueError('Bundled xwinwrap source checksum mismatch.')
+    compiler = shutil.which('cc')
+    if not compiler:
+        raise ValueError('Building xwinwrap requires build-essential and X11 development packages. Approve the package step.')
+    binary = staging / 'xwinwrap'
+    subprocess.run([compiler, '-O2', '-Wall', str(source), '-o', str(binary),
+                    '-lX11', '-lXext', '-lXrender'], check=True, timeout=120)
+    binary.chmod(0o755)
+    return [(binary, Path.home() / '.local/bin/xwinwrap')]
 
 
 def setup_packages(modules, enabled):
+    build = 'core' in modules and not xwinwrap_available()
     packages = package_names(modules)
+    if build:
+        print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
     print('\nDebian packages: ' + ' '.join(packages))
     print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
     if not enabled:
         print('Package installation skipped (--yes never grants permission for apt).')
         return
-    if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?'):
+    if 'core' in modules and shutil.which('i3') is None:
+        print('i3 is missing. This step installs it; an existing i3 session is not required.')
+    if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?', default=True):
         return
     if not shutil.which('sudo') or not shutil.which('apt-get'):
         raise ValueError('sudo/apt-get unavailable. Ask your administrator to install the listed packages.')
     subprocess.run(['sudo', 'apt-get', 'update'], check=True)
     # Do not use -y: apt displays its actual transaction and requests approval.
     subprocess.run(['sudo', 'apt-get', 'install', *packages], check=True)
+    return build
 
 
 def diagnostics(modules):
@@ -286,7 +372,7 @@ def diagnostics(modules):
             result = subprocess.run(['/usr/bin/python3', '-c', '__import__(' + repr(module) + ')'],
                                     capture_output=True, text=True)
             print(f"  {'OK     ' if result.returncode == 0 else 'MISSING'} python3-{module}")
-        print('  DepartureMono Nerd Font Mono, Graphite-Dark and Kitty cursor assets are not bundled.')
+        print('  DepartureMono fonts are bundled and installed per-user if missing. Graphite-Dark is external; Kitty cursor is optional.')
         print('  No remote installer or unpinned third-party download is executed.')
     if 'qt' in modules:
         print('  Qt: set QT_QPA_PLATFORMTHEME=qt5ct in your session environment if needed (not overwritten).')
@@ -296,7 +382,22 @@ def prepare(files, args, staging):
     """Customize copies, never the versioned originals."""
     result = []
     for index, (source, target) in enumerate(files):
-        if source.name == 'kitty.conf' and (args.font or args.shell):
+        if source.name == 'settings.ini' and source.parent.name == 'gtk-3.0' and not getattr(args, 'cursor', False):
+            settings = configparser.ConfigParser(interpolation=None)
+            settings.read_string(source.read_text())
+            previous = configparser.ConfigParser(interpolation=None)
+            safe_target(target)
+            if target.exists():
+                previous.read_string(target.read_text())
+            for key in ('gtk-cursor-theme-name', 'gtk-cursor-theme-size'):
+                settings.remove_option('Settings', key)
+                if previous.has_option('Settings', key):
+                    settings.set('Settings', key, previous.get('Settings', key))
+            copy = staging / str(index)
+            with copy.open('w') as output:
+                settings.write(output)
+            source = copy
+        elif source.name == 'kitty.conf' and (args.font or args.shell):
             text = source.read_text()
             if args.font:
                 text = text.replace('font_family DepartureMono Nerd Font Mono', 'font_family ' + args.font)
@@ -319,12 +420,41 @@ def prepare(files, args, staging):
             copy.chmod(stat.S_IMODE(source.stat().st_mode))
             source = copy
         result.append((source, target))
-    if args.wallpaper:
-        video = args.wallpaper.expanduser().resolve()
-        if not video.is_file() or '\n' in str(video):
+    if getattr(args, 'cursor', False):
+        archive = staging / 'Kitty.tar.gz'
+        cursor.download(archive)
+        result.extend(cursor.unpack(archive, staging / 'cursor'))
+        default = staging / 'cursor-default'
+        default.write_text('[Icon Theme]\nInherits=Kitty\n')
+        result.append((default, Path.home() / '.icons/default/index.theme'))
+        gtk_target = Path.home() / '.config/gtk-3.0/settings.ini'
+        gtk_source = next((s for s, t in result if t == gtk_target), gtk_target)
+        safe_target(gtk_target)
+        settings = configparser.ConfigParser(interpolation=None)
+        if gtk_source.exists():
+            settings.read_string(gtk_source.read_text())
+        if not settings.has_section('Settings'):
+            settings.add_section('Settings')
+        settings.set('Settings', 'gtk-cursor-theme-name', 'Kitty')
+        settings.set('Settings', 'gtk-cursor-theme-size', '48')
+        configured = staging / 'cursor-gtk.ini'
+        with configured.open('w') as output:
+            settings.write(output)
+        result = [(s, t) for s, t in result if t != gtk_target]
+        result.append((configured, gtk_target))
+    bundled_video = Path.home() / '.local/share/debian-i3-dotfiles/lain.mp4'
+    has_bundled = any(target == bundled_video for _, target in result)
+    if args.wallpaper or has_bundled:
+        video = args.wallpaper.expanduser().resolve() if args.wallpaper else bundled_video
+        if args.wallpaper and (not video.is_file() or '\n' in str(video)):
             raise ValueError('Wallpaper must be an existing local video file.')
-        missing = [name for name in ('mpv', 'xwinwrap') if not shutil.which(name)]
-        if missing:
+        staged_xwinwrap = any(target == Path.home() / '.local/bin/xwinwrap' for _, target in result)
+        missing = [name for name in ('mpv', 'xwinwrap')
+                   if not (xwinwrap_available() if name == 'xwinwrap' else shutil.which(name))
+                   and not (name == 'xwinwrap' and staged_xwinwrap)]
+        if missing and not args.wallpaper:
+            print('Wallpaper saved. Playback requires: ' + ', '.join(missing) + '.')
+        if missing and args.wallpaper:
             raise ValueError('Video wallpaper needs: ' + ', '.join(missing) + '. Install them separately or skip --wallpaper.')
         source = staging / 'wallpaper-path'
         source.write_text(str(video) + '\n')
@@ -335,14 +465,18 @@ def prepare(files, args, staging):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Print planned files; never write or install packages.')
-    parser.add_argument('--modules', default='core', help='Comma-separated: core,gtk,qt,fastfetch')
+    parser.add_argument('--modules', default='core,fastfetch', help='Comma-separated: core,gtk,qt,fastfetch')
     parser.add_argument('--yes', action='store_true', help='Accept file installation/restore; does not install packages.')
     parser.add_argument('--files-only', action='store_true', help='Only copy files; skip OS/dependency setup.')
     parser.add_argument('--restore', type=Path, help='Restore a backup directory, refusing later local edits.')
     parser.add_argument('--font', help='Installed font family for Kitty and Polybar; no font download.')
     parser.add_argument('--shell', choices=['zsh', 'bash'], help='Kitty shell only; never runs chsh.')
     parser.add_argument('--wallpaper', type=Path, help='Existing local video; requires mpv and xwinwrap.')
+    parser.add_argument('--cursor', action='store_true', help='Download and apply the checksum-pinned Kitty cursor.')
+    parser.add_argument('--no-cursor', action='store_true', help='Skip the initial cursor question and preserve the current cursor.')
     args = parser.parse_args()
+    if args.cursor and args.no_cursor:
+        parser.error('--cursor and --no-cursor are mutually exclusive.')
     for value in (args.font,):
         if value is not None and (not value.strip() or any(char in value for char in '\n\r;=')):
             parser.error('Invalid font family.')
@@ -358,23 +492,31 @@ def main():
             with (state / 'lock').open('a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 restore(args.restore, False)
+                refresh_font_cache()
         return 0
     modules = list(dict.fromkeys(args.modules.split(',')))
     if any(module not in MODULES for module in modules):
         parser.error('Unknown module; choose core,gtk,qt,fastfetch.')
-    if not args.dry_run and not args.yes and args.modules == 'core':
-        print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers.')
-        for module, label in [('gtk', 'GTK settings (Graphite-Dark and Kitty cursor must already exist)'),
-                              ('qt', 'Qt settings (qt5ct)'), ('fastfetch', 'Fastfetch + bundled artwork')]:
+    if not args.dry_run and not args.yes and not args.cursor and not args.no_cursor:
+        args.cursor = ask('Download and apply my Kitty cursor (black cat, by Noiire; Linux port by pxryzl)?')
+    if not args.dry_run and not args.yes and args.modules == 'core,fastfetch':
+        print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers + Fastfetch with bundled artwork.')
+        for module, label in [('gtk', 'GTK appearance (requires Graphite-Dark; cursor is selected separately)'),
+                              ('qt', 'Qt settings (qt5ct)')]:
             if ask('Include ' + label + '?'):
                 modules.append(module)
     if args.wallpaper and 'core' not in modules:
         parser.error('--wallpaper requires core.')
-    files = plan(modules)
+    # Do not invoke Fontconfig until approval: even fc-list can create caches.
+    files = plan(modules) + font_plan(modules, args.font, detect=False)
+    if 'core' in modules and not args.font:
+        print('Fonts: possible placements listed below; after approval, installed families and existing destination files are preserved.')
     for source, target in files:
         safe_target(target)
         print(f'  {source.relative_to(ROOT)} -> {target}')
     if args.dry_run:
+        if args.cursor:
+            print('Cursor: download verified Kitty archive; install ~/.icons/Kitty; configure ~/.icons/default/index.theme and GTK cursor settings (not downloaded or written).')
         print('\nPackages (not executed): ' + ' '.join(package_names(modules)))
         print(f'Font: {args.font or "DepartureMono Nerd Font Mono"}; Kitty shell: {args.shell or "zsh"}')
         if args.wallpaper:
@@ -383,21 +525,25 @@ def main():
     if not args.yes and not ask('Apply this selection? Existing managed files will be backed up.'):
         print('Cancelled. No files changed.')
         return 0
+    build_xwinwrap = False
     if not args.files_only:
         check_system()
-        setup_packages(modules, enabled=not args.yes)
+        build_xwinwrap = setup_packages(modules, enabled=not args.yes)
         diagnostics(modules)
         if 'core' in modules and not args.yes:
-            if not args.font and ask('Use DejaVu Sans Mono instead of the external Nerd Font? Icons may be missing.'):
-                args.font = 'DejaVu Sans Mono'
             if not args.shell and not shutil.which('zsh'):
                 if ask('zsh is missing. Use bash in Kitty?', default=True):
                     args.shell = 'bash'
                 else:
                     raise ValueError('Install zsh or choose --shell bash before installing core.')
-            if not args.wallpaper and ask('Configure a local video wallpaper? Requires mpv and xwinwrap.'):
-                args.wallpaper = Path(input('Video path (no download): ').strip())
+    files = [pair for pair in files if pair[1].parent != font_directory()] + font_plan(modules, args.font)
     with tempfile.TemporaryDirectory(prefix='dotfiles-') as folder:
+        if build_xwinwrap:
+            target = Path.home() / '.local/bin/xwinwrap'
+            safe_target(target)
+            if os.path.lexists(target):
+                raise ValueError('Existing ~/.local/bin/xwinwrap is not an executable file; remove or fix it before retrying.')
+            files.extend(xwinwrap_plan(Path(folder)))
         files = prepare(files, args, Path(folder))
         for source, target in files:
             safe_target(target)
@@ -405,6 +551,8 @@ def main():
         with (state / 'lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             install(files, state)
+            if any(target.parent == font_directory() for _, target in files):
+                refresh_font_cache()
     return 0
 
 

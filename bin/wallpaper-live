@@ -20,7 +20,9 @@ def main():
         video = Path(args.video).expanduser().resolve()
         if not video.is_file():
             parser.error('Video must be an existing regular file.')
-        argv = ['mpv', '--vo=gpu', '--hwdec=auto-safe', '--no-audio', '--no-border',
+        # GPU first; legacy X11 outputs only when no GPU context works (e.g. VMs without 3D).
+        # --quiet keeps the looping status line out of ~/.xsession-errors.
+        argv = ['mpv', '--vo=gpu,xv,x11', '--quiet', '--hwdec=auto-safe', '--no-audio', '--no-border',
                 '--no-config', '--no-window-dragging', '--no-input-default-bindings',
                 '--no-osd-bar', '--no-sub', '--loop-file=inf', '--wid=' + args.wid,
                 '--', str(video)]

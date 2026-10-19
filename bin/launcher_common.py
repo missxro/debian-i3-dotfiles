@@ -62,7 +62,11 @@ def run(kind, live, config):
         video = str(Path(value).expanduser().resolve())
         if not Path(video).is_file():
             parser.error('Video must be an existing regular file: ' + video)
-        plan = [{'argv': ['xwinwrap', '-g', geometry, '-un', '-fdt', '-ni', '-b',
+        executable = 'xwinwrap'
+        local = Path.home() / '.local/bin/xwinwrap'
+        if not shutil.which(executable) and local.is_file() and os.access(local, os.X_OK):
+            executable = str(local)
+        plan = [{'argv': [executable, '-g', geometry, '-un', '-fdt', '-ni', '-b',
                           '-nf', '-ov', '--', str(live), 'WID', video]}
                 for name, geometry in monitors()]
     if args.dry_run:
@@ -71,6 +75,8 @@ def run(kind, live, config):
     if not plan:
         return 0
     for dependency in (['xwinwrap', 'mpv'] if kind == 'wallpaper' else ['polybar']):
+        if dependency == 'xwinwrap':
+            dependency = plan[0]['argv'][0]
         if shutil.which(dependency) is None:
             raise ValueError('Required executable not found: ' + dependency)
     runtime = os.environ.get('XDG_RUNTIME_DIR')

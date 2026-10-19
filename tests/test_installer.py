@@ -11,11 +11,193 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallerTests(unittest.TestCase):
+    def setUp(self):
+        home = tempfile.TemporaryDirectory(prefix='installer-home-')
+        self.addCleanup(home.cleanup)
+        patcher = mock.patch.dict(os.environ, {'HOME': home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_installer(self, home, *args, input=None):
         return subprocess.run(['python3', str(ROOT / 'install.py'), *args],
                               env={**os.environ, 'HOME': str(home), 'XDG_CONFIG_HOME': str(home / '.config'),
                                    'XDG_STATE_HOME': str(home / '.local/state')},
                               input=input, capture_output=True, text=True)
+
+    def test_package_prompt_defaults_to_yes(self):
+        spec = importlib.util.spec_from_file_location('installer_prompt', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        for answer, expected_runs in [('', 2), ('n', 0)]:
+            with self.subTest(answer=answer), \
+                 mock.patch('builtins.input', return_value=answer) as prompt, \
+                 mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/tool'), \
+                 mock.patch.object(installer.subprocess, 'run') as run:
+                installer.setup_packages(['core'], True)
+                self.assertTrue(prompt.call_args.args[0].endswith(' [Y/n] '))
+                self.assertEqual(run.call_count, expected_runs)
+
+    def test_xwinwrap_build_is_staged_without_root(self):
+        spec = importlib.util.spec_from_file_location('installer_xwinwrap', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            staging = Path(folder)
+            def compile_binary(argv, **kwargs):
+                self.assertNotIn('sudo', argv)
+                Path(argv[argv.index('-o') + 1]).write_bytes(b'compiled')
+            with mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/cc'), \
+                 mock.patch.object(installer.subprocess, 'run', side_effect=compile_binary):
+                files = installer.xwinwrap_plan(staging)
+            self.assertEqual(files[0][0].read_bytes(), b'compiled')
+            self.assertEqual(files[0][1], Path.home() / '.local/bin/xwinwrap')
+            self.assertTrue(files[0][0].stat().st_mode & 0o111)
+
+    def test_package_approval_reports_xwinwrap_build(self):
+        spec = importlib.util.spec_from_file_location('installer_build_approval', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        def which(name):
+            return None if name == 'xwinwrap' else '/usr/bin/' + name
+        with mock.patch.object(installer.shutil, 'which', side_effect=which), \
+             mock.patch.object(installer.subprocess, 'run') as run:
+            with mock.patch.object(installer, 'ask', return_value=False):
+                self.assertFalse(installer.setup_packages(['core'], True))
+                run.assert_not_called()
+            with mock.patch.object(installer, 'ask', return_value=True):
+                self.assertTrue(installer.setup_packages(['core'], True))
+                self.assertIn('libxrender-dev', run.call_args.args[0])
+            with mock.patch.object(installer, 'ask') as ask:
+                self.assertFalse(installer.setup_packages(['core'], False))
+                ask.assert_not_called()
+
+    def test_user_xwinwrap_outside_path_is_not_rebuilt(self):
+        spec = importlib.util.spec_from_file_location('installer_local_xwinwrap', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        def which(name):
+            return None if name == 'xwinwrap' else '/usr/bin/' + name
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / '.local/bin/xwinwrap'
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b'binary')
+            with mock.patch.dict(os.environ, {'HOME': folder}), \
+                 mock.patch.object(installer.shutil, 'which', side_effect=which):
+                binary.chmod(0o644)
+                self.assertIn('libxrender-dev', installer.package_names(['core']))
+                binary.chmod(0o755)
+                self.assertTrue(installer.xwinwrap_available())
+                self.assertNotIn('build-essential', installer.package_names(['core']))
+                with mock.patch.object(installer, 'ask', return_value=True), \
+                     mock.patch.object(installer.subprocess, 'run'):
+                    self.assertFalse(installer.setup_packages(['core'], True))
+
+    def test_picom_autostart_override_installed_and_restored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            other = home / '.config/autostart/other.desktop'
+            other.parent.mkdir(parents=True)
+            other.write_text('[Desktop Entry]\nName=other\n')
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            override = home / '.config/autostart/picom.desktop'
+            self.assertIn('Hidden=true', override.read_text())
+            self.assertTrue(os.access(home / '.local/bin/picom-launch', os.X_OK))
+            manifests = list((home / '.local/state/debian-i3-dotfiles/backups').glob('*/manifest.json'))
+            restored = self.run_installer(home, '--yes', '--restore', str(manifests[0].parent))
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertFalse(override.exists())
+            self.assertFalse((home / '.local/bin/picom-launch').exists())
+            self.assertEqual(other.read_text(), '[Desktop Entry]\nName=other\n')
+
+    def test_group_umask_keeps_state_private_for_repeat_and_restore(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            previous = os.umask(0o002)
+            try:
+                first = self.run_installer(home, '--yes', '--files-only')
+                repeat = self.run_installer(home, '--yes', '--files-only')
+                backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+                restored = self.run_installer(home, '--yes', '--restore', str(backup))
+            finally:
+                os.umask(previous)
+            for result in (first, repeat, restored):
+                self.assertEqual(result.returncode, 0, result.stderr)
+            for path in (home / '.local', home / '.local/state'):
+                self.assertFalse(path.stat().st_mode & 0o022, path)
+
+    def test_default_wallpaper_installed_and_restored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            video = home / '.local/share/debian-i3-dotfiles/lain.mp4'
+            self.assertEqual(video.read_bytes(), (ROOT / 'assets/wallpapers/lain.mp4').read_bytes())
+            setting = home / '.config/debian-i3-dotfiles/wallpaper-path'
+            self.assertEqual(setting.read_text(), str(video) + '\n')
+            self.assertNotIn('Configure a local video wallpaper?', result.stdout)
+            backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+            restored = self.run_installer(home, '--yes', '--restore', str(backup))
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertFalse(video.exists())
+            self.assertFalse(setting.exists())
+
+    def test_default_includes_fastfetch_photo(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            photo = home / '.config/fastfetch/roxy-mushoku-tensei-2.png'
+            self.assertEqual(photo.read_bytes(), (ROOT / 'config/fastfetch/roxy-mushoku-tensei-2.png').read_bytes())
+            self.assertNotIn('Include Fastfetch', result.stdout)
+
+    def test_default_installs_real_fonts_and_restore_removes_them(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            fonts = home / '.local/share/fonts/departure-mono'
+            for name in ('DepartureMonoNerdFontMono-Regular.otf', 'DepartureMonoNerdFont-Regular.otf'):
+                self.assertTrue((fonts / name).is_file(), 'Default installer must install ' + name)
+                self.assertEqual((fonts / name).read_bytes()[:4], b'OTTO')
+            self.assertTrue((fonts / 'LICENSE').is_file())
+            backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+            result = self.run_installer(home, '--yes', '--restore', str(backup))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((fonts / 'DepartureMonoNerdFontMono-Regular.otf').exists())
+
+    def test_default_font_plan_preserves_installed_and_custom_fonts(self):
+        spec = importlib.util.spec_from_file_location('installer_fonts', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        installed = subprocess.CompletedProcess([], 0, 'DepartureMono Nerd Font\nDepartureMono Nerd Font Mono\n')
+        with mock.patch.object(installer.subprocess, 'run', return_value=installed) as run, \
+             mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/fc-list'):
+            self.assertEqual(installer.font_plan(['core']), [])
+            run.assert_called_once()
+            run.reset_mock()
+            self.assertEqual(installer.font_plan(['core'], 'My Custom Font'), [])
+            self.assertEqual(installer.font_plan(['qt']), [])
+            self.assertEqual(len(installer.font_plan(['core'], detect=False)), 3)
+            run.assert_not_called()
+            with tempfile.TemporaryDirectory() as folder, \
+                 mock.patch.object(installer, 'font_directory', return_value=Path(folder)):
+                for name in installer.FONT_FILES.values():
+                    (Path(folder) / name).write_bytes(b'existing user font')
+                with mock.patch.object(installer.subprocess, 'run', side_effect=OSError('fontconfig unavailable')):
+                    self.assertEqual(installer.font_plan(['core']), [])
+                    self.assertEqual(installer.font_plan(['core'], detect=False), [])
+
+    def test_missing_i3_installed_after_approval(self):
+        spec = importlib.util.spec_from_file_location('installer_packages', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer, 'ask', return_value=True), \
+             mock.patch.object(installer.shutil, 'which', side_effect=lambda name: None if name == 'i3' else '/usr/bin/' + name), \
+             mock.patch.object(installer.subprocess, 'run') as run:
+            installer.setup_packages(['core', 'fastfetch'], True)
+            self.assertIn('i3-wm', run.call_args_list[1].args[0])
+            self.assertIn('fastfetch', run.call_args_list[1].args[0])
 
     def test_dry_run_never_writes(self):
         with tempfile.TemporaryDirectory() as folder:

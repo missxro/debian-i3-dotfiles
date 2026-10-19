@@ -40,6 +40,13 @@ class ConfigurationTests(unittest.TestCase):
         self.assertNotRegex(active, r"client\.\w+_floating")
         self.assertNotRegex(active, r"exec_always.*(?:picom|wallpaper|polybar)")
         self.assertIn("wallpaper-wrap", active)
+        self.assertIn('exec --no-startup-id "$HOME/.local/bin/picom-launch"', active)
+        self.assertNotRegex(active, r"exec\s+(?:--no-startup-id\s+)?picom\b")
+
+    def test_system_picom_autostart_is_hidden_for_dex(self):
+        parser = configparser.ConfigParser(interpolation=None)
+        self.assertTrue(parser.read(ROOT / "config/autostart/picom.desktop"))
+        self.assertEqual(parser["Desktop Entry"]["Hidden"], "true")
 
 
 class PublicBoundaryTests(unittest.TestCase):
