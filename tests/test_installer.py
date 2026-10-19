@@ -24,6 +24,99 @@ class InstallerTests(unittest.TestCase):
                                    'XDG_STATE_HOME': str(home / '.local/state')},
                               input=input, capture_output=True, text=True)
 
+    def test_package_preflight_candidates_and_fail_closed(self):
+        spec = importlib.util.spec_from_file_location('installer_test_subject', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        def policy(name):
+            return subprocess.CompletedProcess([], 0, 'Candidate: 1.2\n' if name == 'available' else 'Candidate: (none)\n', '')
+        self.assertEqual(installer.preflight_packages(['available', 'missing'], policy), ['missing'])
+        self.assertEqual(installer.preflight_packages(['broken'], lambda name: subprocess.CompletedProcess([], 1, '', '')), ['broken'])
+
+    def test_preflight_uses_stable_locale(self):
+        spec = importlib.util.spec_from_file_location('installer_locale', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'Candidate: 1.0\n', '')) as run:
+            self.assertEqual(installer.preflight_packages(['i3-wm']), [])
+            self.assertEqual(run.call_args.kwargs.get('env', {}).get('LC_ALL'), 'C')
+
+    def test_package_list_is_shown_before_approval(self):
+        spec = importlib.util.spec_from_file_location('installer_order', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        events = []
+        with mock.patch.object(installer, 'package_names', return_value=['i3-wm']), \
+             mock.patch.object(installer, 'xwinwrap_available', return_value=True), \
+             mock.patch('builtins.print', side_effect=lambda *a, **k: events.append(' '.join(map(str, a)))), \
+             mock.patch.object(installer, 'ask', side_effect=lambda *a, **k: events.append('APPROVAL') or False):
+            installer.setup_packages(['core'], True, 'debian')
+        self.assertTrue(any('i3-wm' in event for event in events[:events.index('APPROVAL')]))
+
+    def test_distro_profiles_do_not_expand_debian_module_list(self):
+        spec = importlib.util.spec_from_file_location('installer_profile', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer, 'xwinwrap_available', return_value=True):
+            self.assertEqual(installer.package_names(['fastfetch'], 'ubuntu'), ['fastfetch'])
+            self.assertEqual(installer.package_names(['fastfetch'], 'debian'), ['fastfetch'])
+            self.assertEqual(installer.package_names(['core'], 'debian'), installer.package_names(['core']))
+
+    def test_package_setup_preflight_before_apt_update_and_install(self):
+        spec = importlib.util.spec_from_file_location('installer_test_subject', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        calls = []
+        with mock.patch.object(installer, 'check_system', return_value='debian'), \
+             mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/apt'), \
+             mock.patch.object(installer, 'ask', return_value=True), \
+             mock.patch.object(installer, 'package_names', return_value=['one', 'missing']), \
+             mock.patch.object(installer, 'xwinwrap_available', return_value=True), \
+             mock.patch.object(installer, 'preflight_packages', side_effect=lambda p: calls.append('preflight') or ['missing']), \
+             mock.patch.object(installer.subprocess, 'run', side_effect=lambda *a, **k: calls.append(a[0])):
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                installer.setup_packages(['core'], True)
+        self.assertEqual(calls, ['preflight'])
+
+    def test_dry_run_and_files_only_do_not_call_apt(self):
+        spec = importlib.util.spec_from_file_location('installer_dry', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer, 'check_system', side_effect=AssertionError('system check called')), \
+             mock.patch.object(installer, 'setup_packages', side_effect=AssertionError('apt setup called')):
+            for args in (['--dry-run', '--modules', 'fastfetch'],
+                         ['--files-only', '--yes', '--modules', 'fastfetch']):
+                with mock.patch('sys.argv', ['install.py', *args]), mock.patch('builtins.print'):
+                    self.assertEqual(installer.main(), 0)
+
+    def test_supported_os_release_profiles(self):
+        spec = importlib.util.spec_from_file_location('installer_os', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        cases = [('ID=debian\nVERSION_ID="13"\n', 'debian'),
+                 ('ID=ubuntu\nVERSION_ID="24.04"\n', 'ubuntu'),
+                 ('ID=kali\nVERSION_ID="rolling"\n', 'kali'),
+                 ('ID=parrot\nVERSION_ID="6.1"\n', 'parrot')]
+        for content, expected in cases:
+            with self.subTest(content=content), mock.patch.object(installer, 'read_os_release', return_value=content):
+                self.assertEqual(installer.check_system(), expected)
+
+    def test_unsupported_and_hostile_os_release_rejected_without_execution(self):
+        spec = importlib.util.spec_from_file_location('installer_os_hostile', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / 'executed'
+            for content in ('ID=linuxmint\nVERSION_ID="22"\nID_LIKE=ubuntu\n',
+                            'ID=ubuntu\nVERSION_ID="20.04"\n',
+                            'ID=parrot\nVERSION_ID="60.0"\n',
+                            'ID=parrot\nVERSION_ID="7foo"\n',
+                            f'ID=ubuntu\nVERSION_ID="24.04$(touch {marker})"\n'):
+                with self.subTest(content=content), mock.patch.object(installer, 'read_os_release', return_value=content):
+                    with self.assertRaises(ValueError):
+                        installer.check_system()
+            self.assertFalse(marker.exists())
+
     def test_package_prompt_defaults_to_yes(self):
         spec = importlib.util.spec_from_file_location('installer_prompt', ROOT / 'install.py')
         installer = importlib.util.module_from_spec(spec)
@@ -32,6 +125,8 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(answer=answer), \
                  mock.patch('builtins.input', return_value=answer) as prompt, \
                  mock.patch.object(installer.shutil, 'which', return_value='/usr/bin/tool'), \
+                 mock.patch.object(installer, 'check_system', return_value='debian'), \
+                 mock.patch.object(installer, 'preflight_packages', return_value=[]), \
                  mock.patch.object(installer.subprocess, 'run') as run:
                 installer.setup_packages(['core'], True)
                 self.assertTrue(prompt.call_args.args[0].endswith(' [Y/n] '))
@@ -64,7 +159,9 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(installer, 'ask', return_value=False):
                 self.assertFalse(installer.setup_packages(['core'], True))
                 run.assert_not_called()
-            with mock.patch.object(installer, 'ask', return_value=True):
+            with mock.patch.object(installer, 'ask', return_value=True), \
+                 mock.patch.object(installer, 'check_system', return_value='debian'), \
+                 mock.patch.object(installer, 'preflight_packages', return_value=[]):
                 self.assertTrue(installer.setup_packages(['core'], True))
                 self.assertIn('libxrender-dev', run.call_args.args[0])
             with mock.patch.object(installer, 'ask') as ask:
@@ -89,6 +186,8 @@ class InstallerTests(unittest.TestCase):
                 self.assertTrue(installer.xwinwrap_available())
                 self.assertNotIn('build-essential', installer.package_names(['core']))
                 with mock.patch.object(installer, 'ask', return_value=True), \
+                     mock.patch.object(installer, 'check_system', return_value='debian'), \
+                     mock.patch.object(installer, 'preflight_packages', return_value=[]), \
                      mock.patch.object(installer.subprocess, 'run'):
                     self.assertFalse(installer.setup_packages(['core'], True))
 
@@ -194,6 +293,8 @@ class InstallerTests(unittest.TestCase):
         spec.loader.exec_module(installer)
         with mock.patch.object(installer, 'ask', return_value=True), \
              mock.patch.object(installer.shutil, 'which', side_effect=lambda name: None if name == 'i3' else '/usr/bin/' + name), \
+             mock.patch.object(installer, 'check_system', return_value='debian'), \
+             mock.patch.object(installer, 'preflight_packages', return_value=[]), \
              mock.patch.object(installer.subprocess, 'run') as run:
             installer.setup_packages(['core', 'fastfetch'], True)
             self.assertIn('i3-wm', run.call_args_list[1].args[0])
@@ -290,7 +391,9 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(installer, 'ask', return_value=False):
                 installer.setup_packages(['core'], enabled=True)
             run.assert_not_called()
-            with mock.patch.object(installer, 'ask', return_value=True), mock.patch.object(installer.shutil, 'which', return_value='/available'):
+            with mock.patch.object(installer, 'ask', return_value=True), mock.patch.object(installer.shutil, 'which', return_value='/available'), \
+                 mock.patch.object(installer, 'check_system', return_value='debian'), \
+                 mock.patch.object(installer, 'preflight_packages', return_value=[]):
                 installer.setup_packages(['core', 'fastfetch'], enabled=True)
             self.assertEqual(run.call_args_list[0].args[0], ['sudo', 'apt-get', 'update'])
             self.assertEqual(run.call_args_list[1].args[0][:3], ['sudo', 'apt-get', 'install'])

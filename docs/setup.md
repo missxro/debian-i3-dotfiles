@@ -9,7 +9,7 @@ Run as your desktop user, not with `sudo`:
 ./install.sh
 ```
 
-The ASCII-headed wizard includes Fastfetch and its bundled photo by default, without a selection question, and selects optional GTK and Qt components. It lists affected files and asks before applying. It offers Debian 13 packages through `sudo apt-get`, including i3 when missing, with separate approval and apt's own transaction prompt. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing. An existing i3 session is not required to run the installer; log out and select an X11/i3 session afterward.
+The ASCII-headed wizard includes Fastfetch and its bundled photo by default, without a selection question, and selects optional GTK and Qt components. It lists affected files and asks before applying. Debian 13 remains the previously supported package target. Ubuntu 22.04/24.04 package setup and Kali/Parrot candidates are provisional pending VM validation; Ubuntu 26.04 package setup is not enabled until its full package set is verified. When package installation is approved, it preflights every requested package candidate before apt or file placement. Declining that step, `--yes`, and `--files-only` skip installation and candidate checks; dependencies then remain the user's responsibility. Ubuntu 22.04/24.04 lack Fastfetch in official archives, so an approved package step stops before file placement if Fastfetch is selected. Choose `--modules core` to omit it. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing. An existing i3 session is not required to run the installer; log out and select an X11/i3 session afterward.
 
 ```sh
 # Explicit components, still interactive
@@ -46,7 +46,7 @@ The installer detects the exact DepartureMono Nerd Font families after approval 
 
 ## Requirements
 
-Target: **Debian 13 with an existing i3/X11 session**. Not Wayland, a desktop migration tool, or a complete operating-system setup.
+Previously supported target: **Debian 13 / X11**. Ubuntu 22.04/24.04, Kali, and Parrot package setup is provisional pending clean-VM install and desktop-session validation. Ubuntu 26.04 package setup is not enabled. Python 3.11+ must already be available; the installer does not upgrade Python. Not Wayland, a desktop migration tool, or a complete operating-system setup.
 
 Debian package names are listed in `packages/debian.txt`. Inspect the list before installing anything. Kitty explicitly uses Zsh, but this repo does not change your login shell.
 

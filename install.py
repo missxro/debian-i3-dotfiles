@@ -299,7 +299,7 @@ def xwinwrap_available():
     return bool(shutil.which('xwinwrap')) or (local.is_file() and os.access(local, os.X_OK))
 
 
-def package_names(modules):
+def package_names(modules, distro=None):
     packages = []
     if 'core' in modules:
         for line in (ROOT / 'packages/debian.txt').read_text().splitlines():
@@ -310,17 +310,61 @@ def package_names(modules):
             packages.extend(names)
     if 'core' in modules and not xwinwrap_available():
         packages.extend(['build-essential', 'libx11-dev', 'libxext-dev', 'libxrender-dev'])
-    return list(dict.fromkeys(packages))
+    profile = PACKAGE_PROFILES.get(distro or '', {})
+    return list(dict.fromkeys(profile.get(name, name) for name in packages))
+
+
+# Package profiles use the shared apt backend; exact IDs only, never ID_LIKE.
+PACKAGE_PROFILES = {
+    'debian': {},
+    'ubuntu': {},
+    'kali': {},
+    'parrot': {},
+}
+
+
+OS_RELEASE = Path('/etc/os-release')
+
+
+def read_os_release():
+    return OS_RELEASE.read_text()
+
+
+def parse_os_release(text):
+    """Parse the KEY=VALUE subset needed here; never evaluate shell syntax."""
+    values = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        if not key.replace('_', '').isalnum():
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
 
 
 def check_system():
     if os.geteuid() == 0:
         raise ValueError('Run as your desktop user, not root. Only apt uses sudo.')
-    release = Path('/etc/os-release').read_text()
-    if 'ID=debian' not in release.splitlines() or 'VERSION_ID="13"' not in release.splitlines():
-        raise ValueError('Automated package setup targets Debian 13. Use --files-only on other systems.')
+    info = parse_os_release(read_os_release())
+    distro, version = info.get('ID'), info.get('VERSION_ID')
+    version_ok = (distro == 'debian' and version == '13'
+                  or distro == 'ubuntu' and version in {'22.04', '24.04'}
+                  or distro == 'kali' and version == 'rolling'
+                  or distro == 'parrot' and bool(version and version.split('.', 1)[0] in {'6', '7'}
+                                               and all(part.isascii() and part.isdigit() for part in version.split('.'))))
+    supported = distro in PACKAGE_PROFILES and version_ok
+    if not supported:
+        raise ValueError('Package setup supports Debian 13 and Ubuntu 22.04/24.04. Kali and Parrot package candidates are provisional; use --files-only elsewhere.')
+    if distro == 'ubuntu' and version in {'22.04', '24.04'}:
+        print('Ubuntu package setup requires the official Universe component enabled; missing candidates are checked before installation.')
     if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
         print('You are using Wayland. Installation is allowed; select an X11/i3 session after logging out.')
+    return distro
 
 
 def xwinwrap_plan(staging):
@@ -338,26 +382,46 @@ def xwinwrap_plan(staging):
     return [(binary, Path.home() / '.local/bin/xwinwrap')]
 
 
-def setup_packages(modules, enabled):
+def setup_packages(modules, enabled, distro=None):
     build = 'core' in modules and not xwinwrap_available()
-    packages = package_names(modules)
-    if build:
-        print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
-    print('\nDebian packages: ' + ' '.join(packages))
-    print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
     if not enabled:
         print('Package installation skipped (--yes never grants permission for apt).')
         return
     if 'core' in modules and shutil.which('i3') is None:
         print('i3 is missing. This step installs it; an existing i3 session is not required.')
+    packages = package_names(modules, distro)
+    if build:
+        print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
+    print('\nDebian packages: ' + ' '.join(packages))
+    print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
     if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?', default=True):
         return
-    if not shutil.which('sudo') or not shutil.which('apt-get'):
-        raise ValueError('sudo/apt-get unavailable. Ask your administrator to install the listed packages.')
+    if not shutil.which('sudo') or not shutil.which('apt-get') or not shutil.which('apt-cache'):
+        raise ValueError('sudo/apt-get/apt-cache unavailable. Ask your administrator to install the listed packages.')
+    distro = distro or check_system()
+    missing = preflight_packages(packages)
+    if missing:
+        raise ValueError('No apt candidate for: ' + ', '.join(missing) + '. Enable the appropriate official repository components and refresh apt metadata; no repositories were changed.')
     subprocess.run(['sudo', 'apt-get', 'update'], check=True)
     # Do not use -y: apt displays its actual transaction and requests approval.
     subprocess.run(['sudo', 'apt-get', 'install', *packages], check=True)
     return build
+
+
+def preflight_packages(packages, policy=None):
+    """Return missing apt candidates; injectable policy makes this offline-testable."""
+    policy = policy or (lambda name: subprocess.run(
+        ['apt-cache', 'policy', name], capture_output=True, text=True, check=False,
+        env={**os.environ, 'LC_ALL': 'C'}))
+    missing = []
+    for package in packages:
+        result = policy(package)
+        candidate = any(line.strip().startswith('Candidate:') and
+                        line.strip() != 'Candidate: (none)'
+                        for line in result.stdout.splitlines())
+        if result.returncode != 0 or not candidate:
+            missing.append(package)
+    return missing
 
 
 def diagnostics(modules):
@@ -517,7 +581,7 @@ def main():
     if args.dry_run:
         if args.cursor:
             print('Cursor: download verified Kitty archive; install ~/.icons/Kitty; configure ~/.icons/default/index.theme and GTK cursor settings (not downloaded or written).')
-        print('\nPackages (not executed): ' + ' '.join(package_names(modules)))
+        print('\nPackages (not executed): ' + ' '.join(package_names(modules, 'debian')))
         print(f'Font: {args.font or "DepartureMono Nerd Font Mono"}; Kitty shell: {args.shell or "zsh"}')
         if args.wallpaper:
             print('Wallpaper path (not written): ' + str(args.wallpaper))
@@ -527,8 +591,8 @@ def main():
         return 0
     build_xwinwrap = False
     if not args.files_only:
-        check_system()
-        build_xwinwrap = setup_packages(modules, enabled=not args.yes)
+        distro = check_system()
+        build_xwinwrap = setup_packages(modules, enabled=not args.yes, distro=distro)
         diagnostics(modules)
         if 'core' in modules and not args.yes:
             if not args.shell and not shutil.which('zsh'):
