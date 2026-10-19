@@ -6,7 +6,7 @@ tiling_drag modifier titlebar
 
 # Run once per session. Reloading i3 must not duplicate background processes.
 # Configure monitor layout with your own optional X session setup.
-exec --no-startup-id picom --config "$HOME/.config/picom/picom.conf"
+exec --no-startup-id "$HOME/.local/bin/picom-launch"
 exec --no-startup-id "$HOME/.config/polybar/launch.sh"
 exec --no-startup-id "$HOME/.local/bin/wallpaper-wrap"
 exec --no-startup-id dex --autostart --environment i3

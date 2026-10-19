@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WALL = ROOT / 'bin/wallpaper-wrap'
 BAR = ROOT / 'config/polybar/launch.sh'
 LIVE = ROOT / 'bin/wallpaper-live'
+PICOM = ROOT / 'bin/picom-launch'
 
 
 class Launchers(unittest.TestCase):
@@ -24,7 +25,7 @@ class Launchers(unittest.TestCase):
         self.mock = self.base / 'commands'
         self.mock.mkdir()
         (self.mock / 'python3').symlink_to(sys.executable)
-        self.env = dict(os.environ, PATH=str(self.mock), DISPLAY=':test',
+        self.env = dict(os.environ, PATH=str(self.mock), DISPLAY=':test', HOME=str(self.base),
                         XDG_RUNTIME_DIR=str(self.base / 'runtime'),
                         XDG_CONFIG_HOME=str(self.base / 'config'), XDG_SESSION_TYPE='x11',
                         MONITORS='Monitors: 2\n 0: +*DP-1 1920/500x1080/300+0+0 DP-1\n 1: +HDMI-1 1280/300x720/200-1280-40 HDMI-1\n',
@@ -52,6 +53,38 @@ class Launchers(unittest.TestCase):
                                  env=dict(self.env, HOME=str(self.base)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(item['argv'][0] == str(binary) for item in json.loads(result.stdout)))
+
+    def test_live_falls_back_from_gpu_to_x11_outputs_quietly(self):
+        self.command('mpv', 'import json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+        result = self.run_script(LIVE, '0x123', self.video)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = json.loads(result.stdout)
+        vo = [arg for arg in argv if arg.startswith('--vo=')]
+        self.assertEqual(vo, ['--vo=gpu,xv,x11'])
+        self.assertIn('--quiet', argv)
+        self.assertFalse(any(arg.startswith(('--gpu-sw', '--opengl-sw')) for arg in argv))
+        self.assertLess(argv.index('--quiet'), argv.index('--'))
+
+    def test_picom_launch_uses_xrender_only_for_software_gl(self):
+        body = ('import json, os, sys\n'
+                'if "--diagnostics" in sys.argv:\n'
+                '    print(os.environ["DIAG"]); sys.exit(int(os.environ.get("DIAG_EXIT", "0")))\n'
+                'print(json.dumps(sys.argv[1:]))\n')
+        self.command('picom', body)
+        config = str(self.base / 'config/picom/picom.conf')
+        for diag, code, extra in [('### Backend: glx\n* Accelerated: 1', '0', []),
+                                  ('### Backend: glx\n* Accelerated: 0', '0', ['--backend', 'xrender']),
+                                  ('* Accelerated: 0', '1', []),
+                                  ('', '1', [])]:
+            with self.subTest(diag=diag, code=code):
+                result = self.run_script(PICOM, env=dict(self.env, DIAG=diag, DIAG_EXIT=code))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), ['--config', config, *extra])
+                self.assertNotIn('Traceback', result.stderr)
+        (self.mock / 'picom').unlink()
+        result = self.run_script(PICOM)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('Traceback', result.stderr)
 
     def test_polybar_plans_each_monitor_and_single_and_empty(self):
         for output, names in [(self.env['MONITORS'], ['DP-1', 'HDMI-1']),

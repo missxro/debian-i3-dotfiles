@@ -11,6 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallerTests(unittest.TestCase):
+    def setUp(self):
+        home = tempfile.TemporaryDirectory(prefix='installer-home-')
+        self.addCleanup(home.cleanup)
+        patcher = mock.patch.dict(os.environ, {'HOME': home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_installer(self, home, *args, input=None):
         return subprocess.run(['python3', str(ROOT / 'install.py'), *args],
                               env={**os.environ, 'HOME': str(home), 'XDG_CONFIG_HOME': str(home / '.config'),
@@ -63,6 +70,61 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(installer, 'ask') as ask:
                 self.assertFalse(installer.setup_packages(['core'], False))
                 ask.assert_not_called()
+
+    def test_user_xwinwrap_outside_path_is_not_rebuilt(self):
+        spec = importlib.util.spec_from_file_location('installer_local_xwinwrap', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        def which(name):
+            return None if name == 'xwinwrap' else '/usr/bin/' + name
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / '.local/bin/xwinwrap'
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b'binary')
+            with mock.patch.dict(os.environ, {'HOME': folder}), \
+                 mock.patch.object(installer.shutil, 'which', side_effect=which):
+                binary.chmod(0o644)
+                self.assertIn('libxrender-dev', installer.package_names(['core']))
+                binary.chmod(0o755)
+                self.assertTrue(installer.xwinwrap_available())
+                self.assertNotIn('build-essential', installer.package_names(['core']))
+                with mock.patch.object(installer, 'ask', return_value=True), \
+                     mock.patch.object(installer.subprocess, 'run'):
+                    self.assertFalse(installer.setup_packages(['core'], True))
+
+    def test_picom_autostart_override_installed_and_restored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            other = home / '.config/autostart/other.desktop'
+            other.parent.mkdir(parents=True)
+            other.write_text('[Desktop Entry]\nName=other\n')
+            result = self.run_installer(home, '--yes', '--files-only')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            override = home / '.config/autostart/picom.desktop'
+            self.assertIn('Hidden=true', override.read_text())
+            self.assertTrue(os.access(home / '.local/bin/picom-launch', os.X_OK))
+            manifests = list((home / '.local/state/debian-i3-dotfiles/backups').glob('*/manifest.json'))
+            restored = self.run_installer(home, '--yes', '--restore', str(manifests[0].parent))
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertFalse(override.exists())
+            self.assertFalse((home / '.local/bin/picom-launch').exists())
+            self.assertEqual(other.read_text(), '[Desktop Entry]\nName=other\n')
+
+    def test_group_umask_keeps_state_private_for_repeat_and_restore(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            previous = os.umask(0o002)
+            try:
+                first = self.run_installer(home, '--yes', '--files-only')
+                repeat = self.run_installer(home, '--yes', '--files-only')
+                backup = next((home / '.local/state/debian-i3-dotfiles/backups').iterdir())
+                restored = self.run_installer(home, '--yes', '--restore', str(backup))
+            finally:
+                os.umask(previous)
+            for result in (first, repeat, restored):
+                self.assertEqual(result.returncode, 0, result.stderr)
+            for path in (home / '.local', home / '.local/state'):
+                self.assertFalse(path.stat().st_mode & 0o022, path)
 
     def test_default_wallpaper_installed_and_restored(self):
         with tempfile.TemporaryDirectory() as folder:

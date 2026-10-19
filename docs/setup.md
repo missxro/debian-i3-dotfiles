@@ -63,7 +63,7 @@ Optional GTK appearance assumes Graphite-Dark is already installed. Cursor selec
 
 1. Read the configs and back up every destination first.
 2. Place `i3`, `kitty`, `picom`, and `polybar` from `config/` under `~/.config/`. Do not replace your entire config directory.
-3. Place **all three files** from `bin/` under `~/.local/bin/`: `wallpaper-wrap`, `wallpaper-live`, and `launcher_common.py`. The two entry points must remain executable. Polybar's launcher imports the shared helper from this directory; its own launcher and Python modules must also remain executable.
+3. Place all files from `bin/` under `~/.local/bin/`: `wallpaper-wrap`, `wallpaper-live`, `picom-launch`, and `launcher_common.py`. The entry points must remain executable. Copy `config/autostart/picom.desktop` to `~/.config/autostart/picom.desktop` to prevent dex from launching a competing Picom instance. Polybar's launcher imports the shared helper from this directory; its own launcher and Python modules must also remain executable.
 4. Validate with `i3 -C -c "$HOME/.config/i3/config"`; read the output, not only the exit status.
 5. Start a fresh i3 session when ready. Reloading the config does not deliberately restart background processes.
 
@@ -92,6 +92,10 @@ Preview without launching background processes:
 The previews need X11 and `xrandr` to discover active monitors. Normal launch also requires the corresponding runtime programs.
 
 Launchers use the existing display layout; they do not change modes, refresh rates, positions, or the primary display. Hotplug requires restarting the relevant supervisor; live reconfiguration is not included yet.
+
+### Graphics fallback
+
+The wallpaper tries mpv outputs `gpu,xv,x11` in that order; GPU acceleration remains preferred. `picom-launch` selects `xrender` only when Picom diagnostics report `Accelerated: 0`; otherwise the configured backend is retained. This supports software-rendered X11 VMs without forcing software OpenGL. Blur is unavailable with this xrender fallback, and Xv overlays may not appear in screenshots or through translucent windows. Core also installs a per-user Picom autostart override to avoid a second instance from dex; it is managed by backup/restore like other configuration files.
 
 ### Fastfetch (included by default)
 

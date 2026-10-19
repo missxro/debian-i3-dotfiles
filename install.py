@@ -17,7 +17,7 @@ import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parent
-MODULES = {'core': ['i3', 'kitty', 'picom', 'polybar'],
+MODULES = {'core': ['autostart', 'i3', 'kitty', 'picom', 'polybar'],
            'gtk': ['gtk-3.0'], 'qt': ['qt5ct'], 'fastfetch': ['fastfetch']}
 BANNER = r'''
  ____   ___ _____ _____ ___ _     _____ ____
@@ -136,6 +136,13 @@ def state_directory():
     directory = state_path()
     validate_state_path(directory)
     safe_target(directory / 'lock')
+    # Create missing ancestors below $HOME as 0700 too: with umask 002 a plain
+    # mkdir(parents=True) leaves ~/.local(/state) group-writable and every later
+    # run or restore is rejected by validate_state_path().
+    home = Path.home().absolute()
+    for parent in reversed([p for p in directory.parents if home in p.parents]):
+        if not parent.exists():
+            parent.mkdir(mode=0o700)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o077:
         raise ValueError('State directory must be private (0700): ' + str(directory))
@@ -170,7 +177,8 @@ def install(files, state):
         return
     safe_target(state / 'backups' / 'probe')
     backup = state / 'backups' / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8])
-    backup.mkdir(parents=True, mode=0o700)
+    (state / 'backups').mkdir(exist_ok=True, mode=0o700)  # parents=True would ignore mode
+    backup.mkdir(mode=0o700)
     manifest = {'version': 1, 'home': str(Path.home()), 'entries': [], 'restored': False}
     # Prepare every original and the journal before changing any configuration.
     for index, (source, target) in enumerate(changed):
@@ -285,6 +293,12 @@ def ask(question, default=False):
         print('Please answer y or n.')
 
 
+def xwinwrap_available():
+    """Match the launcher: ~/.local/bin/xwinwrap counts even when it is not on PATH."""
+    local = Path.home() / '.local/bin/xwinwrap'
+    return bool(shutil.which('xwinwrap')) or (local.is_file() and os.access(local, os.X_OK))
+
+
 def package_names(modules):
     packages = []
     if 'core' in modules:
@@ -294,7 +308,7 @@ def package_names(modules):
                           'qt': ['qt5ct'], 'fastfetch': ['fastfetch']}.items():
         if module in modules:
             packages.extend(names)
-    if 'core' in modules and not shutil.which('xwinwrap'):
+    if 'core' in modules and not xwinwrap_available():
         packages.extend(['build-essential', 'libx11-dev', 'libxext-dev', 'libxrender-dev'])
     return list(dict.fromkeys(packages))
 
@@ -325,7 +339,7 @@ def xwinwrap_plan(staging):
 
 
 def setup_packages(modules, enabled):
-    build = 'core' in modules and not shutil.which('xwinwrap')
+    build = 'core' in modules and not xwinwrap_available()
     packages = package_names(modules)
     if build:
         print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
@@ -436,7 +450,8 @@ def prepare(files, args, staging):
             raise ValueError('Wallpaper must be an existing local video file.')
         staged_xwinwrap = any(target == Path.home() / '.local/bin/xwinwrap' for _, target in result)
         missing = [name for name in ('mpv', 'xwinwrap')
-                   if not shutil.which(name) and not (name == 'xwinwrap' and staged_xwinwrap)]
+                   if not (xwinwrap_available() if name == 'xwinwrap' else shutil.which(name))
+                   and not (name == 'xwinwrap' and staged_xwinwrap)]
         if missing and not args.wallpaper:
             print('Wallpaper saved. Playback requires: ' + ', '.join(missing) + '.')
         if missing and args.wallpaper:
@@ -526,8 +541,8 @@ def main():
         if build_xwinwrap:
             target = Path.home() / '.local/bin/xwinwrap'
             safe_target(target)
-            if target.exists():
-                raise ValueError('Existing ~/.local/bin/xwinwrap is not on PATH; add ~/.local/bin to PATH before retrying.')
+            if os.path.lexists(target):
+                raise ValueError('Existing ~/.local/bin/xwinwrap is not an executable file; remove or fix it before retrying.')
             files.extend(xwinwrap_plan(Path(folder)))
         files = prepare(files, args, Path(folder))
         for source, target in files:
