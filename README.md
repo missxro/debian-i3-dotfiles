@@ -42,14 +42,21 @@ tests/      Repository, launcher and MPRIS checks
 
 ## Getting started
 
-1. **Requirements:** existing Debian 13 i3/X11 session and an audio server.
-2. **Packages:** [core](packages/debian.txt) / [optional](packages/optional-debian.txt).
-3. **Fonts:** DepartureMono Regular/Mono are bundled and installed per-user if missing. **Animated wallpaper:** video bundled; missing xwinwrap is compiled per-user after package approval.
-4. Preview with `./install.sh --dry-run`, then run `./install.sh` for the interactive installer.
+On Debian 13, run from the repository directory as your normal user:
 
-The installer asks before copying files or installing packages, backs up originals and supports restore. See [setup & recovery](docs/setup.md) for component selection and options.
+```sh
+./install.sh
+```
 
-> The Kitty cursor can be downloaded with explicit approval and checksum verification. Other external theme assets and xwinwrap are not downloaded. Cloning this repository does not change your desktop.
+The installer offers to install the required packages, installs missing bundled fonts and configures the animated wallpaper automatically. Existing files are backed up. Do not run the installer with `sudo`.
+
+To preview changes without installing anything:
+
+```sh
+./install.sh --dry-run
+```
+
+Python 3.11+ is required to start the installer. An existing i3 session is not required: after installation, select i3 in your login screen. See [setup & recovery](docs/setup.md) for prerequisites, optional components and restore instructions.
 
 ## Checks
 
