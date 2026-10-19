@@ -498,7 +498,7 @@ def main():
     if any(module not in MODULES for module in modules):
         parser.error('Unknown module; choose core,gtk,qt,fastfetch.')
     if not args.dry_run and not args.yes and not args.cursor and not args.no_cursor:
-        args.cursor = ask('Download and apply my Kitty cursor (black cat, by Noiire; Linux port by pxryzl)?')
+        args.cursor = ask('Download and apply my Kitty cursor (black cat, by Noiire; Linux port by pxryzl)?', default=True)
     if not args.dry_run and not args.yes and args.modules == 'core,fastfetch':
         print('Core: i3 + Polybar + Picom + Kitty + wallpaper helpers + Fastfetch with bundled artwork.')
         for module, label in [('gtk', 'GTK appearance (requires Graphite-Dark; cursor is selected separately)'),
