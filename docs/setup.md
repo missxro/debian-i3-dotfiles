@@ -1,4 +1,6 @@
 # Setup
+Ubuntu core requires i3 >= 4.22. If its native candidate is older, a **separate default-no confirmation** offers the sur5r signed repository recommended by i3. Its pinned keyring is checksum-verified; HTTPS, `signed-by` and i3-only apt pinning are used. Repository files and keyring persist after restore. No automatic session restart or login-shell change occurs. This option never runs with `--yes`, `--files-only` or `--dry-run`. See `docs/package-support.md` for exact paths and limitations.
+
 
 ## Interactive installer
 
@@ -9,7 +11,7 @@ Run as your desktop user, not with `sudo`:
 ./install.sh
 ```
 
-The ASCII-headed wizard includes Fastfetch and its bundled photo by default, without a selection question, and selects optional GTK and Qt components. It lists affected files and asks before applying. Debian 13 remains the previously supported package target. Ubuntu 22.04/24.04 package setup and Kali/Parrot candidates are provisional pending VM validation; Ubuntu 26.04 package setup is not enabled until its full package set is verified. When package installation is approved, it preflights every requested package candidate before apt or file placement. Declining that step, `--yes`, and `--files-only` skip installation and candidate checks; dependencies then remain the user's responsibility. When Fastfetch has no apt candidate, the approved package step uses the official Fastfetch 2.70.0 `.deb` (amd64/arm64), checking pinned SHA256, package name, architecture and version before running apt. Failed verification stops before apt or configuration changes. No PPA is added. Only apt is elevated. Python 3.11+ is required; cloning this repo changes nothing. An existing i3 session is not required to run the installer; log out and select an X11/i3 session afterward.
+The ASCII-headed wizard includes Fastfetch and its bundled photo by default, without a selection question, and selects optional GTK and Qt components. It lists affected files and asks before applying. Debian 13 remains the previously supported package target. Ubuntu 22.04/24.04 package setup and Kali/Parrot candidates are provisional pending VM validation; Ubuntu 26.04 package setup is not enabled until its full package set is verified. When package installation is approved, it preflights every requested package candidate before apt or file placement. Declining that step, `--yes`, and `--files-only` skip installation and candidate checks; dependencies then remain the user's responsibility. When Fastfetch has no apt candidate, the approved package step uses the official Fastfetch 2.70.0 `.deb` (amd64/arm64), checking pinned SHA256, package name, architecture and version before running apt. Failed verification stops before apt or configuration changes. No PPA is added. Only package setup and explicitly approved repository file placement are elevated. Python 3.11+ is required; cloning this repo changes nothing. An existing i3 session is not required to run the installer; log out and select an X11/i3 session afterward.
 
 ```sh
 # Explicit components, still interactive

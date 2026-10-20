@@ -1,4 +1,6 @@
 # debian-i3-dotfiles
+Ubuntu core requires i3 >= 4.22. If its native candidate is older, a **separate default-no confirmation** offers the sur5r signed repository recommended by i3. Its pinned keyring is checksum-verified; HTTPS, `signed-by` and i3-only apt pinning are used. Repository files and keyring persist after restore. No automatic session restart or login-shell change occurs. This option never runs with `--yes`, `--files-only` or `--dry-run`. See `docs/package-support.md` for exact paths and limitations.
+
 
 My Debian 13 rice — i3wm, Polybar, Kitty, Picom & animated wallpapers.
 

@@ -11,6 +11,78 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallerTests(unittest.TestCase):
+    def test_i3_minimum_version_and_candidate_guards(self):
+        spec = importlib.util.spec_from_file_location('installer_i3_guard', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        self.assertFalse(installer.i3_version_supported('i3 version 4.20.1'))
+        self.assertTrue(installer.i3_version_supported('i3 version 4.22'))
+        self.assertTrue(installer.i3_version_supported('i3 version 4.24'))
+        # Candidate retrieval is mocked below; never depend on the host apt cache.
+        with mock.patch.object(installer.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'Candidate: 4.20.1-1\n', '')):
+            self.assertFalse(installer.i3_version_supported(installer.apt_candidate('i3-wm')))
+
+    def test_i3_config_validation_rejects_old_before_parser(self):
+        spec = importlib.util.spec_from_file_location('installer_i3_parser', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with mock.patch.object(installer.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'i3 version 4.20.1', '')) as run:
+            with self.assertRaisesRegex(ValueError, 'requires i3 >= 4.22'):
+                installer.validate_i3_config(ROOT / 'config/i3/config', binary='i3')
+            self.assertEqual(run.call_count, 1)
+
+    def test_sur5r_source_is_exactly_mapped(self):
+        installer = self.load_installer('sur5r_source')
+        self.assertIn('jammy', installer.sur5r_source('22.04'))
+        self.assertIn('noble', installer.sur5r_source('24.04'))
+        for version in ('20.04', '24.10', 'rolling', ''):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                installer.sur5r_source(version)
+
+    def load_installer(self, name='installer_test'):
+        spec = importlib.util.spec_from_file_location(name, ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        return installer
+
+    def test_sur5r_decline_has_no_mutations(self):
+        installer = self.load_installer('sur5r_decline')
+        with mock.patch.object(installer, 'ask', return_value=False), \
+             mock.patch.object(installer, 'check_repository_target'), \
+             mock.patch.object(installer, 'install_sur5r') as install:
+            with self.assertRaisesRegex(ValueError, 'declined'):
+                installer.approve_sur5r('22.04')
+            install.assert_not_called()
+
+    def test_sur5r_corrupt_checksum_stops_before_dpkg(self):
+        installer = self.load_installer('sur5r_checksum')
+        with tempfile.TemporaryDirectory() as folder, \
+             mock.patch.object(installer.urllib.request, 'urlopen') as urlopen, \
+             mock.patch.object(installer.subprocess, 'run') as run:
+            response = mock.MagicMock()
+            response.geturl.return_value = 'https://debian.sur5r.net/key.deb'
+            response.read.return_value = b'corrupt'
+            urlopen.return_value.__enter__.return_value = response
+            with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                installer.download_sur5r_key(Path(folder))
+            run.assert_not_called()
+
+    def test_sur5r_rejects_bad_package_metadata(self):
+        installer = self.load_installer('sur5r_metadata')
+        for field in ('Package', 'Version', 'Architecture'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as folder, \
+                 mock.patch.object(installer.urllib.request, 'urlopen') as urlopen, \
+                 mock.patch.object(installer, 'SUR5R_KEY_HASH', installer.hashlib.sha256(b'fixture').hexdigest()), \
+                 mock.patch.object(installer.subprocess, 'run') as run:
+                response = mock.MagicMock()
+                response.geturl.return_value = 'https://debian.sur5r.net/key.deb'
+                response.read.return_value = b'fixture'
+                urlopen.return_value.__enter__.return_value = response
+                expected = {'Package': 'sur5r-keyring', 'Version': installer.SUR5R_KEY_VERSION, 'Architecture': 'all'}
+                run.side_effect = lambda argv, **kw: subprocess.CompletedProcess(argv, 0, ('wrong' if argv[-1] == field else expected[argv[-1]])+'\n', '')
+                with self.assertRaisesRegex(ValueError, field):
+                    installer.download_sur5r_key(Path(folder))
+
     def setUp(self):
         home = tempfile.TemporaryDirectory(prefix='installer-home-')
         self.addCleanup(home.cleanup)

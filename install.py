@@ -18,6 +18,7 @@ import uuid
 import urllib.request
 
 FASTFETCH_VERSION = '2.70.0'
+MIN_I3_VERSION = (4, 22)
 FASTFETCH_ASSETS = {
     'amd64': ('amd64', '06e9a1be9a863dc815f8a31a6b1abec7b29967be30084ffcc29c1bca072d801b'),
     'arm64': ('aarch64', '25053651486d97b8731dd6bc59e725944e39adcdcd903741334c1c3282a7281d'),
@@ -421,6 +422,81 @@ def xwinwrap_plan(staging):
     return [(binary, Path.home() / '.local/bin/xwinwrap')]
 
 
+SUR5R_KEY_VERSION = '2025.12.14'
+SUR5R_KEY_HASH = '2c816fbd12ea4d84811818aed0ce3a5da589be1afa30833eb32abc1e4fe6349e'
+SUR5R_SOURCE = Path('/etc/apt/sources.list.d/sur5r-i3.list')
+SUR5R_PREFERENCES = Path('/etc/apt/preferences.d/sur5r-i3')
+SUR5R_PINS = ('Package: i3 i3-wm i3status i3lock sur5r-keyring\n'
+              'Pin: origin debian.sur5r.net\nPin-Priority: 500\n\n'
+              'Package: *\nPin: origin debian.sur5r.net\nPin-Priority: -1\n')
+
+
+def sur5r_source(version):
+    codename = {'22.04': 'jammy', '24.04': 'noble'}.get(version)
+    if not codename:
+        raise ValueError('sur5r repository is only enabled for Ubuntu 22.04/24.04.')
+    return f'deb [signed-by=/usr/share/keyrings/sur5r-keyring.gpg] https://debian.sur5r.net/i3/ {codename} universe\n'
+
+
+def check_repository_target(path, expected):
+    if path.is_symlink():
+        raise ValueError(f'Refusing symlinked repository configuration: {path}')
+    if path.exists():
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError(f'Unsafe existing repository configuration: {path}')
+        if path.read_text() != expected:
+            raise ValueError(f'Refusing to overwrite existing repository configuration: {path}')
+
+
+def approve_sur5r(version):
+    source = sur5r_source(version)
+    check_repository_target(SUR5R_SOURCE, source)
+    check_repository_target(SUR5R_PREFERENCES, SUR5R_PINS)
+    print('Native i3 is too old. Optional repository recommended by i3: https://debian.sur5r.net/i3/')
+    print(f'Install verified sur5r-keyring {SUR5R_KEY_VERSION}; write {SUR5R_SOURCE} and {SUR5R_PREFERENCES}.')
+    print('signed-by limits the signing key; apt pinning limits this origin to i3 packages and its keyring.')
+    print('These system changes persist after dotfiles restore. No running session will be restarted.')
+    if not ask('Add this signed repository and install compatible i3?', default=False):
+        raise ValueError('Repository declined. Core requires i3 >= 4.22; no configuration was placed.')
+    return source
+
+
+def download_sur5r_key(directory):
+    package = directory / 'sur5r-keyring.deb'
+    url = f'https://debian.sur5r.net/i3/pool/main/s/sur5r-keyring/sur5r-keyring_{SUR5R_KEY_VERSION}_all.deb'
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            if not response.geturl().startswith('https://'):
+                raise ValueError('Keyring download must use HTTPS.')
+            data = response.read(2 * 1024 * 1024 + 1)
+    except OSError as error:
+        raise ValueError(f'Keyring download failed: {error}') from error
+    if len(data) > 2 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != SUR5R_KEY_HASH:
+        raise ValueError('sur5r keyring checksum mismatch; no system changes made.')
+    package.write_bytes(data)
+    for field, expected in [('Package', 'sur5r-keyring'), ('Version', SUR5R_KEY_VERSION), ('Architecture', 'all')]:
+        value = subprocess.run(['dpkg-deb', '--field', str(package), field], check=True,
+                               capture_output=True, text=True, timeout=30).stdout.strip()
+        if value != expected:
+            raise ValueError(f'sur5r keyring {field} mismatch; no system changes made.')
+    return package
+
+
+def install_sur5r(directory, package, source):
+    # Recheck immediately before privileged writes; never overwrite custom content.
+    check_repository_target(SUR5R_SOURCE, source)
+    check_repository_target(SUR5R_PREFERENCES, SUR5R_PINS)
+    subprocess.run(['sudo', 'apt-get', 'install', str(package)], check=True)
+    for name, target, content in [('sur5r-i3.list', SUR5R_SOURCE, source),
+                                   ('sur5r-i3.pref', SUR5R_PREFERENCES, SUR5R_PINS)]:
+        staged = directory / name
+        staged.write_text(content)
+        subprocess.run(['sudo', 'install', '-o', 'root', '-g', 'root', '-m', '0644',
+                        str(staged), str(target)], check=True)
+    print('Repository configured. If a later apt step fails, these repository/keyring changes remain; dotfiles restore does not remove them.')
+
+
 def setup_packages(modules, enabled, distro=None):
     build = 'core' in modules and not xwinwrap_available()
     if not enabled:
@@ -434,7 +510,9 @@ def setup_packages(modules, enabled, distro=None):
     print('\nDebian packages: ' + ' '.join(packages))
     if 'fastfetch' in packages:
         print(f'If apt has no Fastfetch candidate, download official fastfetch-cli/fastfetch {FASTFETCH_VERSION} .deb from GitHub (amd64/arm64), verify pinned SHA256 and package metadata, then install with apt. No PPA is added.')
-    print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
+    if 'core' in modules:
+        print('i3 must be version 4.22 or newer for this configuration (gaps and tiling_drag). Ubuntu native i3 may be too old; a signed repository is offered separately with default-no approval.')
+    print('Only package and approved repository setup is elevated. No login-shell changes, display-manager changes or service restarts are requested.')
     if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?', default=True):
         return
     if not shutil.which('sudo') or not shutil.which('apt-get') or not shutil.which('apt-cache'):
@@ -444,6 +522,9 @@ def setup_packages(modules, enabled, distro=None):
     unavailable = [name for name in missing if name != 'fastfetch']
     if unavailable:
         raise ValueError('No apt candidate for: ' + ', '.join(unavailable) + '. Enable the appropriate official repository components and refresh apt metadata; no repositories were changed.')
+    repository_source = None
+    if 'core' in modules and distro == 'ubuntu' and not i3_version_supported(apt_candidate('i3-wm')):
+        repository_source = approve_sur5r(os_release_version())
     # Private staging prevents replacement of a verified package by other users.
     # apt may report its standard unsandboxed-local-file warning because _apt
     # cannot traverse this directory. Never weaken the sandbox configuration.
@@ -454,10 +535,55 @@ def setup_packages(modules, enabled, distro=None):
                                           capture_output=True, text=True, timeout=30).stdout.strip()
             package = download_fastfetch(Path(folder), architecture)
             install_packages = [str(package) if name == 'fastfetch' else name for name in packages]
+        if repository_source:
+            keyring = download_sur5r_key(Path(folder))
+            install_sur5r(Path(folder), keyring, repository_source)
         subprocess.run(['sudo', 'apt-get', 'update'], check=True)
+        if repository_source and not i3_version_supported(apt_candidate('i3-wm')):
+            raise ValueError('Repository added but i3 candidate is still older than 4.22. No dotfiles were placed; inspect apt policy i3-wm.')
         # Do not use -y: apt displays its actual transaction and requests approval.
         subprocess.run(['sudo', 'apt-get', 'install', *install_packages], check=True)
     return build
+
+
+def apt_candidate(package):
+    result = subprocess.run(['apt-cache', 'policy', package], capture_output=True,
+                            text=True, check=False, env={**os.environ, 'LC_ALL': 'C'})
+    if result.returncode:
+        return None
+    for line in result.stdout.splitlines():
+        if line.strip().startswith('Candidate:'):
+            value = line.split(':', 1)[1].strip()
+            return None if value == '(none)' else value
+    return None
+
+
+def os_release_version():
+    return parse_os_release(read_os_release()).get('VERSION_ID')
+
+
+def i3_version_supported(version):
+    if not version:
+        return False
+    import re
+    match = re.search(r'(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?', version)
+    return bool(match and tuple(int(part or 0) for part in match.groups()) >= (*MIN_I3_VERSION, 0))
+
+
+def validate_i3_config(config, binary=None):
+    """Run i3's parser without starting a session or executing config commands."""
+    binary = binary or shutil.which('i3')
+    if not binary:
+        raise ValueError('Cannot validate i3 configuration: i3 is not installed. No configuration was placed.')
+    version = subprocess.run([binary, '--version'], capture_output=True, text=True,
+                             check=True, timeout=15).stdout
+    if not i3_version_supported(version):
+        raise ValueError(f'Core requires i3 >= 4.22 for gaps and tiling_drag; found {version.strip() or "unknown version"}. No configuration was placed.')
+    result = subprocess.run([binary, '-C', '-c', str(config)], capture_output=True,
+                            text=True, check=False, timeout=30)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise ValueError('i3 rejected the configuration; no configuration was placed: ' + detail)
 
 
 def preflight_packages(packages, policy=None):
@@ -661,6 +787,11 @@ def main():
                 raise ValueError('Existing ~/.local/bin/xwinwrap is not an executable file; remove or fix it before retrying.')
             files.extend(xwinwrap_plan(Path(folder)))
         files = prepare(files, args, Path(folder))
+        if 'core' in modules and not args.files_only:
+            i3_config = next((source for source, target in files
+                              if target == Path.home() / '.config/i3/config'),
+                             ROOT / 'config/i3/config')
+            validate_i3_config(i3_config)
         for source, target in files:
             safe_target(target)
         state = state_directory()

@@ -23,6 +23,7 @@ class FastfetchTests(unittest.TestCase):
         for name, value in [('xwinwrap_available', True), ('package_names', ['i3-wm', 'fastfetch']),
                             ('ask', True), ('preflight_packages', missing)]:
             stack.enter_context(mock.patch.object(self.installer, name, return_value=value))
+        stack.enter_context(mock.patch.object(self.installer, 'apt_candidate', return_value='4.24-1'))
         stack.enter_context(mock.patch.object(self.installer.shutil, 'which', return_value='/usr/bin/tool'))
         return stack
 
