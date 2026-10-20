@@ -82,6 +82,11 @@ def plan(modules):
                 if source.is_file() and '__pycache__' not in source.parts:
                     files.append((source, config / source.relative_to(ROOT / 'config')))
     if 'core' in modules:
+        files.extend([(ROOT / 'config/zsh/zshrc', home / '.zshrc'),
+                      (ROOT / 'config/zsh/p10k.zsh', home / '.p10k.zsh')])
+        theme = ROOT / 'vendor/powerlevel10k'
+        files.extend((source, home / '.local/share/debian-i3-dotfiles/powerlevel10k' / source.relative_to(theme))
+                     for source in sorted(theme.rglob('*')) if source.is_file())
         files.append((ROOT / 'assets/wallpapers/lain.mp4', home / '.local/share/debian-i3-dotfiles/lain.mp4'))
         files.extend((source, home / '.local/bin' / source.name)
                      for source in sorted((ROOT / 'bin').iterdir()) if source.is_file())

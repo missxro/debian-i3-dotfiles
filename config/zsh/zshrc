@@ -1,0 +1,12 @@
+# Load only for interactive shells; keep startup independent of network and frameworks.
+[[ -o interactive ]] || return
+
+export POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true
+export POWERLEVEL9K_DISABLE_GITSTATUS=true
+
+_p10k_dir="$HOME/.local/share/debian-i3-dotfiles/powerlevel10k"
+if [[ -r "$_p10k_dir/powerlevel10k.zsh-theme" ]]; then
+  source "$_p10k_dir/powerlevel10k.zsh-theme"
+fi
+[[ -r "$HOME/.p10k.zsh" ]] && source "$HOME/.p10k.zsh"
+unset _p10k_dir
