@@ -15,6 +15,45 @@ import subprocess
 import tempfile
 import sys
 import uuid
+import urllib.request
+
+FASTFETCH_VERSION = '2.70.0'
+FASTFETCH_ASSETS = {
+    'amd64': ('amd64', '06e9a1be9a863dc815f8a31a6b1abec7b29967be30084ffcc29c1bca072d801b'),
+    'arm64': ('aarch64', '25053651486d97b8731dd6bc59e725944e39adcdcd903741334c1c3282a7281d'),
+}
+
+
+def verify_fastfetch_deb(package, architecture):
+    for field, expected in [('Package', 'fastfetch'), ('Architecture', architecture), ('Version', FASTFETCH_VERSION)]:
+        value = subprocess.run(['dpkg-deb', '--field', str(package), field],
+                               check=True, capture_output=True, text=True, timeout=30).stdout.strip()
+        if value != expected:
+            raise ValueError(f'Fastfetch {field} mismatch: expected {expected}, got {value}.')
+
+
+def download_fastfetch(directory, architecture):
+    if architecture not in FASTFETCH_ASSETS:
+        raise ValueError(f'Official Fastfetch fallback does not support architecture {architecture}.')
+    asset, expected = FASTFETCH_ASSETS[architecture]
+    url = f'https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-{asset}.deb'
+    package = directory / 'fastfetch.deb'
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response, package.open('xb') as output:
+            if not response.geturl().startswith('https://'):
+                raise ValueError('Fastfetch download redirected outside HTTPS.')
+            size = 0
+            while chunk := response.read(1024 * 1024):
+                size += len(chunk)
+                if size > 50 * 1024 * 1024:
+                    raise ValueError('Fastfetch package exceeds download size limit.')
+                output.write(chunk)
+    except OSError as error:
+        raise ValueError(f'Fastfetch download failed: {error}') from error
+    if hashlib.sha256(package.read_bytes()).hexdigest() != expected:
+        raise ValueError('Fastfetch checksum mismatch; no packages or configuration installed.')
+    verify_fastfetch_deb(package, architecture)
+    return package
 
 ROOT = Path(__file__).resolve().parent
 MODULES = {'core': ['autostart', 'i3', 'kitty', 'picom', 'polybar'],
@@ -393,6 +432,8 @@ def setup_packages(modules, enabled, distro=None):
     if build:
         print('xwinwrap is missing: after package approval, compile the bundled pinned source into ~/.local/bin/xwinwrap (no sudo build).')
     print('\nDebian packages: ' + ' '.join(packages))
+    if 'fastfetch' in packages:
+        print(f'If apt has no Fastfetch candidate, download official fastfetch-cli/fastfetch {FASTFETCH_VERSION} .deb from GitHub (amd64/arm64), verify pinned SHA256 and package metadata, then install with apt. No PPA is added.')
     print('Only apt is elevated. No shell changes, display-manager changes or service restarts are requested.')
     if not ask('Run sudo apt-get update, then sudo apt-get install for these packages?', default=True):
         return
@@ -400,11 +441,22 @@ def setup_packages(modules, enabled, distro=None):
         raise ValueError('sudo/apt-get/apt-cache unavailable. Ask your administrator to install the listed packages.')
     distro = distro or check_system()
     missing = preflight_packages(packages)
-    if missing:
-        raise ValueError('No apt candidate for: ' + ', '.join(missing) + '. Enable the appropriate official repository components and refresh apt metadata; no repositories were changed.')
-    subprocess.run(['sudo', 'apt-get', 'update'], check=True)
-    # Do not use -y: apt displays its actual transaction and requests approval.
-    subprocess.run(['sudo', 'apt-get', 'install', *packages], check=True)
+    unavailable = [name for name in missing if name != 'fastfetch']
+    if unavailable:
+        raise ValueError('No apt candidate for: ' + ', '.join(unavailable) + '. Enable the appropriate official repository components and refresh apt metadata; no repositories were changed.')
+    # Private staging prevents replacement of a verified package by other users.
+    # apt may report its standard unsandboxed-local-file warning because _apt
+    # cannot traverse this directory. Never weaken the sandbox configuration.
+    with tempfile.TemporaryDirectory(prefix='dotfiles-fastfetch-') as folder:
+        install_packages = list(packages)
+        if 'fastfetch' in missing:
+            architecture = subprocess.run(['dpkg', '--print-architecture'], check=True,
+                                          capture_output=True, text=True, timeout=30).stdout.strip()
+            package = download_fastfetch(Path(folder), architecture)
+            install_packages = [str(package) if name == 'fastfetch' else name for name in packages]
+        subprocess.run(['sudo', 'apt-get', 'update'], check=True)
+        # Do not use -y: apt displays its actual transaction and requests approval.
+        subprocess.run(['sudo', 'apt-get', 'install', *install_packages], check=True)
     return build
 
 

@@ -78,6 +78,17 @@ class InstallerTests(unittest.TestCase):
                 installer.setup_packages(['core'], True)
         self.assertEqual(calls, ['preflight'])
 
+    def test_fastfetch_deb_metadata_rejects_wrong_architecture(self):
+        spec = importlib.util.spec_from_file_location('installer_deb_test', ROOT / 'install.py')
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        with tempfile.TemporaryDirectory() as folder:
+            package = Path(folder) / 'fastfetch.deb'
+            package.write_bytes(b'fixture')
+            with mock.patch.object(installer.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'fastfetch\n', '')):
+                with self.assertRaisesRegex(ValueError, 'Architecture'):
+                    installer.verify_fastfetch_deb(package, 'arm64')
+
     def test_dry_run_and_files_only_do_not_call_apt(self):
         spec = importlib.util.spec_from_file_location('installer_dry', ROOT / 'install.py')
         installer = importlib.util.module_from_spec(spec)

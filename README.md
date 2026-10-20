@@ -50,7 +50,7 @@ On Debian 13, run from the repository directory as your normal user:
 
 The installer offers to install the required packages, installs missing bundled fonts and configures the animated wallpaper automatically. Existing files are backed up. Do not run the installer with `sudo`.
 
-Experimental package setup also recognizes Ubuntu 22.04/24.04, Kali rolling and Parrot 6/7; these still need clean-VM testing. When package installation is approved, missing package candidates stop setup before file placement. On Ubuntu, try `./install.sh --modules core` first: Fastfetch is not available in the official 22.04/24.04 archives. Python 3.11+ must already be available. See [package support and limitations](docs/package-support.md).
+Experimental package setup also recognizes Ubuntu 22.04/24.04, Kali rolling and Parrot 6/7; these still need clean-VM testing. When package installation is approved, missing package candidates stop setup before file placement. Fastfetch stays included: if apt has no candidate, the approved package step downloads the official Fastfetch 2.70.0 `.deb` for amd64/arm64, verifies its pinned SHA256 and metadata, and installs it through apt without adding repositories. Python 3.11+ must already be available. See [package support and limitations](docs/package-support.md).
 
 To preview changes without installing anything:
 
