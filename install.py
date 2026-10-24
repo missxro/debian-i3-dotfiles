@@ -398,14 +398,14 @@ def check_system():
     info = parse_os_release(read_os_release())
     distro, version = info.get('ID'), info.get('VERSION_ID')
     version_ok = (distro == 'debian' and version == '13'
-                  or distro == 'ubuntu' and version in {'22.04', '24.04'}
+                  or distro == 'ubuntu' and version in {'22.04', '24.04', '26.04'}
                   or distro == 'kali' and version == 'rolling'
                   or distro == 'parrot' and bool(version and version.split('.', 1)[0] in {'6', '7'}
                                                and all(part.isascii() and part.isdigit() for part in version.split('.'))))
     supported = distro in PACKAGE_PROFILES and version_ok
     if not supported:
-        raise ValueError('Package setup supports Debian 13 and Ubuntu 22.04/24.04. Kali and Parrot package candidates are provisional; use --files-only elsewhere.')
-    if distro == 'ubuntu' and version in {'22.04', '24.04'}:
+        raise ValueError('Package setup supports Debian 13 and Ubuntu 22.04/24.04/26.04. Kali and Parrot package candidates are provisional; use --files-only elsewhere.')
+    if distro == 'ubuntu' and version in {'22.04', '24.04', '26.04'}:
         print('Ubuntu package setup requires the official Universe component enabled; missing candidates are checked before installation.')
     if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
         print('You are using Wayland. Installation is allowed; select an X11/i3 session after logging out.')

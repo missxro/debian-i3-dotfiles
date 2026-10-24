@@ -178,6 +178,7 @@ class InstallerTests(unittest.TestCase):
         spec.loader.exec_module(installer)
         cases = [('ID=debian\nVERSION_ID="13"\n', 'debian'),
                  ('ID=ubuntu\nVERSION_ID="24.04"\n', 'ubuntu'),
+                 ('ID=ubuntu\nVERSION_ID="26.04"\n', 'ubuntu'),
                  ('ID=kali\nVERSION_ID="rolling"\n', 'kali'),
                  ('ID=parrot\nVERSION_ID="6.1"\n', 'parrot')]
         for content, expected in cases:
