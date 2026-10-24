@@ -1,5 +1,6 @@
 # Core runtime package names, not a full desktop installation.
-# Existing X11 display/session and audio server are prerequisites.
+# A display manager and audio server remain prerequisites; core includes Xorg.
+xserver-xorg
 i3-wm
 i3lock
 xss-lock
