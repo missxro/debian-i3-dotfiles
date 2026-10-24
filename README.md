@@ -1,8 +1,4 @@
-# debian-i3-dotfiles
-Ubuntu core requires i3 >= 4.22. If its native candidate is older, a **separate default-no confirmation** offers the sur5r signed repository recommended by i3. Its pinned keyring is checksum-verified; HTTPS, `signed-by` and i3-only apt pinning are used. Repository files and keyring persist after restore. No automatic session restart or login-shell change occurs. This option never runs with `--yes`, `--files-only` or `--dry-run`. See `docs/package-support.md` for exact paths and limitations.
-
-
-My Debian 13 rice - i3wm, Polybar, Kitty, Picom and lain animated wallpaper.
+# My personal dotfiles
 
 ## Preview
 
@@ -14,15 +10,15 @@ My Debian 13 rice - i3wm, Polybar, Kitty, Picom and lain animated wallpaper.
 
 ## Setup
 
-- **OS:** Debian 13 / X11
-- **WM:** i3 / gaps / pixel borders / Mod4
-- **Bar:** Polybar / Cava / MPRIS / volume / system stats
-- **Terminal:** Kitty / Ayaka / Zsh
+- **OS:** Debian, Ubuntu, Kali and Parrot
+- **WM:** i3
+- **Bar:** Polybar
+- **Terminal:** Kitty / Zsh
 - **Compositor:** Picom / blur / transparency / fading
 - **Wallpaper:** xwinwrap + MPV / one video per active monitor
 - **Font:** DepartureMono Nerd Font Mono
 - **Included by default:** Fastfetch with bundled artwork
-- **Optional:** GTK3 / Graphite-Dark / Qt5ct / Kitty cursor download
+- **Optional:** GTK3 / Graphite-Dark / Qt5ct / Kitty cursor download :3
 
 ## Features
 
@@ -44,15 +40,13 @@ tests/      Repository, launcher and MPRIS checks
 
 ## Getting started
 
-On Debian 13, run from the repository directory as your normal user:
+Run from the repository directory as your normal user:
 
 ```sh
 ./install.sh
 ```
 
 The installer offers to install the required packages, installs missing bundled fonts and configures the animated wallpaper automatically. Existing files are backed up. Do not run the installer with `sudo`.
-
-Experimental package setup also recognizes Ubuntu 22.04/24.04/26.04, Kali rolling and Parrot 6/7; these still need clean-VM testing. When package installation is approved, missing package candidates stop setup before file placement. Fastfetch stays included: if apt has no candidate, the approved package step downloads the official Fastfetch 2.70.0 `.deb` for amd64/arm64, verifies its pinned SHA256 and metadata, and installs it through apt without adding repositories. Python 3.11+ must already be available. See [package support and limitations](docs/package-support.md).
 
 To preview changes without installing anything:
 
