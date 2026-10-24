@@ -47,6 +47,7 @@ class ZshTests(unittest.TestCase):
             home = Path(folder)
             for distro in ('debian', 'ubuntu', 'kali', 'parrot'):
                 self.assertIn('zsh', installer.package_names(['core'], distro))
+                self.assertIn('xserver-xorg', installer.package_names(['core'], distro))
             targets = dict((str(target), source) for source, target in installer.plan(['core']))
             self.assertEqual(targets[str(home / '.zshrc')], ROOT / 'config/zsh/zshrc')
             self.assertEqual(targets[str(home / '.p10k.zsh')], ROOT / 'config/zsh/p10k.zsh')
